@@ -1,20 +1,100 @@
-from itertools import count
+from django.db.models import Count
 import json
 from django.utils import timezone
 from django.http import JsonResponse
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from django.views.decorators.csrf import csrf_exempt
+from django.shortcuts import get_object_or_404
 
 import random
 
 from game.models import Game
+from custom_auth.models import User
+from game.models import Card
 
 def get_bingo_card(request):
-    from game.models import Card
-    cardnumber = request.GET.get('paramName', '')
-    card = Card.objects.get(id=int(cardnumber))
-    card_numbers = json.loads(card.numbers)
-    bingo_table_json = json.dumps(card_numbers)
-    return JsonResponse(bingo_table_json,safe=False)
+    # Retrieve the card ID(s) from the request parameters
+    card_ids = request.GET.getlist('cardId')
 
+    # Validate card IDs to ensure they are all digits
+    if not all(card_id.isdigit() for card_id in card_ids):
+        return JsonResponse({"error": "Invalid card ID(s)"}, status=400)
+
+    try:
+        # Fetch all card objects based on the provided IDs
+        cards = Card.objects.filter(id__in=[int(card_id) for card_id in card_ids])
+
+        # Check if the requested cards were found
+        if not cards:
+            return JsonResponse({"error": "Card(s) not found"}, status=404)
+
+        # Prepare response data for multiple cards
+        bingo_table_data = [
+            {
+                "id": card.id,
+                "numbers": json.loads(card.numbers)  # Load JSON field as a Python object
+            }
+            for card in cards
+        ]
+
+        return JsonResponse(bingo_table_data, safe=False)
+
+    except Exception as e:
+        # Catch any unexpected errors and return a server error response
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+def get_playing_bingo_card(request):
+    user_id = request.GET.get('userId')
+    game_id = request.GET.get('gameId')
+
+    def flatten_card_ids(card_list):
+        """Recursively flatten card IDs to handle any nested lists."""
+        flattened = []
+        for card in card_list:
+            if isinstance(card, list):
+                flattened.extend(flatten_card_ids(card))
+            else:
+                flattened.append(int(card))
+        return flattened
+
+    try:
+        # Retrieve the specified game
+        game = Game.objects.get(id=game_id)
+
+        # Parse playerCard JSON to find cards for the specified user
+        players = json.loads(game.playerCard)
+        
+        # Find and flatten all card IDs for the specified user
+        user_cards = []
+        for player in players:
+            if player['user'] == int(user_id):
+                # Flatten card IDs for this player
+                user_cards.extend(flatten_card_ids(player['card'] if isinstance(player['card'], list) else [player['card']]))
+
+        # Fetch the Card objects
+        cards = Card.objects.filter(id__in=user_cards)
+
+        # Check if any cards were found
+        if not cards.exists():
+            return JsonResponse({"error": "No cards found for this user in the specified game."}, status=404)
+
+        # Prepare response data for all user cards
+        bingo_table_data = [
+            {
+                "id": card.id,
+                "numbers": json.loads(card.numbers)  # Load JSON field format as a Python object
+            }
+            for card in cards
+        ]
+
+        return JsonResponse(bingo_table_data, safe=False)
+    
+    except Game.DoesNotExist:
+        return JsonResponse({"error": "Game not found"}, status=404)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
 
 def generate_random_numbers():
     # Generate a list of numbers from 1 to 75
@@ -30,7 +110,7 @@ def get_active_games(request):
     active_games = (
         Game.objects.filter(played='Started')  # Filter by games that are started
         .values('stake')                       # Group by stake
-        .annotate(count=count('id'))           # Count the number of games in each stake group
+        .annotate(count=Count('id'))           # Count the number of games in each stake group
     )
 
     # Convert the result into a dictionary where the keys are stake values and the values are the counts
@@ -40,6 +120,7 @@ def get_active_games(request):
         'activeGames': result
     })
 
+@csrf_exempt
 def start_game(request, stake):
     # Check if there is an active game with the chosen stake
     active_game = Game.objects.filter(stake=stake, played='Started').order_by('-created_at').first()
@@ -60,6 +141,7 @@ def start_game(request, stake):
         created_at=timezone.now(),
         started_at=timezone.now(),
         total_calls=0,
+        random_numbers=json.dumps(generate_random_numbers()),
         winner_price=0,
         admin_cut=0
     )
@@ -69,4 +151,30 @@ def start_game(request, stake):
         'game_id': new_game.id,
         'message': f'New game created for stake {stake}'
     })
+
+@api_view(['GET'])
+def get_game_stat(request, game_id, user_id):
+    # Retrieve the game instance by ID
+    game = get_object_or_404(Game, id=game_id)
+    # Retrieve the user instance by ID
+    user = get_object_or_404(User, id=1)
+
+     # Load the existing player card data or initialize as an empty list
+    try:
+        players = json.loads(game.playerCard) if game.playerCard else []
+    except json.JSONDecodeError:
+        players = []
+
+    # Prepare the game stats data
+    data = {
+        "wallet": user.wallet,
+        "stake": game.stake,
+        "selected_players" : players,
+        "game_id": game.id,
+        "no_players": game.numberofplayers,
+        "bonus": game.bonus,
+        "winner": game.winner_price,
+    }
+
+    return Response(data)
 

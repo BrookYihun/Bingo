@@ -6,6 +6,7 @@ from rest_framework import status
 from .models import User
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
+from .serializer import UserSerializer  # Make sure you have a serializer for User model
 
 def get_tokens_for_user(user):
     refresh = RefreshToken.for_user(user)
@@ -36,8 +37,13 @@ class RegisterView(APIView):
 
         # Create a new user
         user = User.objects.create_user(phone_number=phone_number, password=password, name=name)
+
+        # Generate tokens for the new user
+        tokens = get_tokens_for_user(user)
+        user_data = UserSerializer(user).data  # Serialize user data
+
         return Response(
-            {"message": "User registered successfully"},
+            {"message": "User registered successfully", "tokens": tokens, "user": user_data},
             status=status.HTTP_201_CREATED
         )
 
@@ -50,7 +56,14 @@ class LoginView(APIView):
         user = authenticate(phone_number=phone_number, password=password)
         if user:
             tokens = get_tokens_for_user(user)
-            return Response(tokens, status=status.HTTP_200_OK)
+            user_data = UserSerializer(user).data  # Serialize user data
+            
+            # Combine tokens with user data
+            response_data = {
+                "tokens": tokens,
+                "user": user_data,
+            }
+            return Response(response_data, status=status.HTTP_200_OK)
         
         return Response(
             {"error": "Invalid phone number or password"},

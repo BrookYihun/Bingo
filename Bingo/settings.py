@@ -36,13 +36,15 @@ ALLOWED_HOSTS = [
 ]
 
 CORS_ALLOWED_ORIGINS = [
-    '5.75.175.113',
-    'dallolbingo.com',
-    'www.dallolbingo.com',
+    'http://5.75.175.113',
+    'http://dallolbingo.com',
+    'http://www.dallolbingo.com',
     'https://www.dallolbingo.com',
-    '127.0.0.1'
+    'http://localhost:3000'
     # Add other origins as needed
 ]
+
+CSRF_TRUSTED_ORIGINS = ['http://localhost:3000']
 
 # Application definition
 
@@ -159,11 +161,6 @@ STATIC_ROOT = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'custom_auth.AbstractUser'
-
-# Allow requests from your React app's origin
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",  # React app's origin
-]
 
 CHANNEL_LAYERS = {
     "default": {
