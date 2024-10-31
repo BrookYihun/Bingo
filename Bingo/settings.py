@@ -44,7 +44,13 @@ CORS_ALLOWED_ORIGINS = [
     # Add other origins as needed
 ]
 
-CSRF_TRUSTED_ORIGINS = ['http://localhost:3000']
+CSRF_TRUSTED_ORIGINS = [
+    'http://5.75.175.113',
+    'http://dallolbingo.com',
+    'http://www.dallolbingo.com',
+    'https://www.dallolbingo.com',
+    'http://localhost:3000'
+    ]
 
 # Application definition
 
