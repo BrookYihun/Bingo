@@ -334,6 +334,7 @@ class GameConsumer(WebsocketConsumer):
                     'type': 'sucess',
                     'message': 'Game will start soon'
                 }
+        )
 
         # Broadcast the updated player list over the socket
         async_to_sync(self.channel_layer.group_send)(
