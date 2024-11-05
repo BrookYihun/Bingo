@@ -373,8 +373,18 @@ class GameConsumer(WebsocketConsumer):
             'player_list': player_list
         }))
 
-    def handle_unknown_message_type(self, message_type):
-        self.send_error_message(f"No handler for message type {message_type}")
-
-    def send_error_message(self, message):
-        self.send(json.dumps({'type': 'error', 'message': message}))
+    def error(self, event):
+        message = event['message']
+        # Send the updated player list to WebSocket clients
+        self.send(text_data=json.dumps({
+            'type': 'error',
+            'message': message
+        }))
+    
+    def success(self, event):
+        message = event['message']
+        # Send the updated player list to WebSocket clients
+        self.send(text_data=json.dumps({
+            'type': 'success',
+            'message': message
+        }))
