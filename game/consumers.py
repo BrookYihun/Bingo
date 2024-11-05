@@ -328,7 +328,7 @@ class GameConsumer(WebsocketConsumer):
         game.numberofplayers = sum(len(p['card']) if isinstance(p['card'], list) else 1 for p in players)  # Count all cards accurately
         game.save()
 
-         async_to_sync(self.channel_layer.send)(
+        async_to_sync(self.channel_layer.send)(
                 self.channel_name,
                 {
                     'type': 'sucess',
