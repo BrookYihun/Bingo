@@ -286,7 +286,19 @@ class GameConsumer(WebsocketConsumer):
         from game.models import Game
 
         game = Game.objects.get(id=int(self.game_id))
-        
+
+        # Check if game status is not "playing"
+        if game.status != "playing":
+            # Send a message to the user indicating they can't join
+            async_to_sync(self.channel_layer.send)(
+                self.channel_name,
+                {
+                    'type': 'error',
+                    'message': 'Cannot join: The game is not currently playing.'
+                }
+            )
+            return  # Exit early since the game is not in the correct state
+
         # Load the existing player card data or initialize as an empty list
         try:
             players = json.loads(game.playerCard) if game.playerCard else []
@@ -315,6 +327,13 @@ class GameConsumer(WebsocketConsumer):
         game.playerCard = json.dumps(players)
         game.numberofplayers = sum(len(p['card']) if isinstance(p['card'], list) else 1 for p in players)  # Count all cards accurately
         game.save()
+
+         async_to_sync(self.channel_layer.send)(
+                self.channel_name,
+                {
+                    'type': 'sucess',
+                    'message': 'Game will start soon'
+                }
 
         # Broadcast the updated player list over the socket
         async_to_sync(self.channel_layer.group_send)(
