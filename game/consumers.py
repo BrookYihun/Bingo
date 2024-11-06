@@ -91,7 +91,7 @@ class GameConsumer(WebsocketConsumer):
         game.played = "Started"
         game.started_at = timezone.now()
         game.save()
-        
+
         async_to_sync(self.channel_layer.group_send)(
             self.room_group_name,
             {
@@ -103,7 +103,9 @@ class GameConsumer(WebsocketConsumer):
         time.sleep(65)
         game.played = 'Playing'
         game.save()
-        
+    
+    # Use a lock to prevent duplicate sending
+    with self.lock:
         for num in self.game_random_numbers:
             if self.is_running:
                 async_to_sync(self.channel_layer.group_send)(
