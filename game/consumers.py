@@ -381,10 +381,10 @@ class GameConsumer(WebsocketConsumer):
             'message': message
         }))
     
-    def success(self, event):
+    def sucess(self, event):
         message = event['message']
         # Send the updated player list to WebSocket clients
         self.send(text_data=json.dumps({
-            'type': 'success',
+            'type': 'sucess',
             'message': message
         }))
