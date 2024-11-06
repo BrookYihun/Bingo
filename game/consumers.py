@@ -1,9 +1,9 @@
-from django.utils import timezone
+import json
 import threading
 import time
+from django.utils import timezone
 from channels.generic.websocket import WebsocketConsumer
-import json
-from asgiref.sync import sync_to_async, async_to_sync
+from asgiref.sync import async_to_sync
 
 active_games = {}
 
@@ -17,10 +17,10 @@ class GameConsumer(WebsocketConsumer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.lock = threading.Lock()
-    
+
     def connect(self):
         self.game_id = self.scope['url_route']['kwargs']['game_id']
-        self.room_group_name = 'game_%s' % self.game_id
+        self.room_group_name = f'game_{self.game_id}'
         # Join room group
         async_to_sync(self.channel_layer.group_add)(
             self.room_group_name,
@@ -31,16 +31,14 @@ class GameConsumer(WebsocketConsumer):
         from game.models import Game
         game = Game.objects.get(id=int(self.game_id))
         self.game_random_numbers = json.loads(game.random_numbers)
-    
 
     def disconnect(self, close_code):
         # Leave room group
-        self.channel_layer.group_discard(
+        async_to_sync(self.channel_layer.group_discard)(
             self.room_group_name,
             self.channel_name
         )
 
-    # Receive message from WebSocket
     def receive(self, text_data):
         data = json.loads(text_data)
 
@@ -51,7 +49,7 @@ class GameConsumer(WebsocketConsumer):
             if game.played == "Started" and game.numberofplayers > 1:
                 elapsed_time = (timezone.now() - game.started_at).total_seconds()
                 if elapsed_time > 60:
-                    game.played = 'Playing'  # Fix assignment from == to =
+                    game.played = 'Playing'
                     game.save()
                     
                 self.send(text_data=json.dumps({
@@ -76,14 +74,12 @@ class GameConsumer(WebsocketConsumer):
                 self.is_running = False
                 if self.timer_thread:
                     self.timer_thread.join()
-                # Remove game from active games if it exists
                 if self.game_id in active_games:
                     del active_games[self.game_id]
             else:
                 self.block(int(data['user_id']))
 
         if data['type'] == 'select_number':
-            print(data)
             self.add_player(data['player_id'], data['card_id'])
 
         if data['type'] == 'remove_number':
@@ -103,24 +99,24 @@ class GameConsumer(WebsocketConsumer):
                 'message': str(game.started_at)
             }
         )
-        
+
         time.sleep(65)
         game.played = 'Playing'
         game.save()
-    
-    # Use a lock to prevent duplicate sending
-    with self.lock:
-        for num in self.game_random_numbers:
-            if self.is_running:
-                async_to_sync(self.channel_layer.group_send)(
-                    self.room_group_name,
-                    {
-                        'type': 'random_number',
-                        'random_number': num
-                    }
-                )
-                self.called_numbers.append(num)
-                time.sleep(5)
+
+        # Use a lock to prevent duplicate sending
+        with self.lock:
+            for num in self.game_random_numbers:
+                if self.is_running:
+                    async_to_sync(self.channel_layer.group_send)(
+                        self.room_group_name,
+                        {
+                            'type': 'random_number',
+                            'random_number': num
+                        }
+                    )
+                    self.called_numbers.append(num)
+                    time.sleep(5)
 
     def random_number(self, event):
         random_number = event['random_number']
