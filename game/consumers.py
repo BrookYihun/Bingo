@@ -177,7 +177,14 @@ class GameConsumer(WebsocketConsumer):
         game.save_called_numbers(called_numbers_list) 
         game.save()
 
+        from itertools import chain
+
+        # Flatten player_cards if it contains nested lists
+        if any(isinstance(i, list) for i in player_cards):
+            player_cards = list(chain.from_iterable(player_cards))
+
         cards = Card.objects.filter(id__in=player_cards)
+
         # Loop through all the cards assigned to the user
         for card in cards:
             numbers = json.loads(card.numbers)
