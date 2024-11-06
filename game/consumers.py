@@ -13,6 +13,10 @@ class GameConsumer(WebsocketConsumer):
     timer_thread = None
     is_running = False
     bingo = False
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.lock = threading.Lock()
     
     def connect(self):
         self.game_id = self.scope['url_route']['kwargs']['game_id']
