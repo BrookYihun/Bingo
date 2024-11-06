@@ -288,7 +288,7 @@ class GameConsumer(WebsocketConsumer):
         game = Game.objects.get(id=int(self.game_id))
 
         # Check if game status is not "playing"
-        if game.played != "playing":
+        if game.played == "playing":
             # Send a message to the user indicating they can't join
             async_to_sync(self.channel_layer.send)(
                 self.channel_name,
