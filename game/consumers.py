@@ -100,25 +100,32 @@ class GameConsumer(WebsocketConsumer):
             }
         )
 
+        # Wait 65 seconds before switching state
         time.sleep(65)
         game.played = 'Playing'
         game.save()
 
-        # Use a lock to prevent duplicate sending
-        with self.lock:
-            for num in self.game_random_numbers:
-                if self.is_running:
-                    async_to_sync(self.channel_layer.group_send)(
-                        self.room_group_name,
-                        {
-                            'type': 'random_number',
-                            'random_number': num
-                        }
-                    )
-                    self.called_numbers.append(num)
-                    time.sleep(5)
+        # Send each number only once
+        for num in self.game_random_numbers:
+            if not self.is_running:
+                break
+
+            with self.lock:
+                # Send the random number to all players in the group only once
+                async_to_sync(self.channel_layer.group_send)(
+                    self.room_group_name,
+                    {
+                        'type': 'random_number',
+                        'random_number': num
+                    }
+                )
+                self.called_numbers.append(num)
+
+            # Wait for a few seconds before sending the next number
+            time.sleep(5)
 
     def random_number(self, event):
+        """Handles individual random number events received from group_send."""
         random_number = event['random_number']
         self.send(text_data=json.dumps({
             'type': 'random_number',
