@@ -60,9 +60,11 @@ class GameConsumer(WebsocketConsumer):
                         'message': 'Start Game' 
                     }
                 )
-                self.is_running = True
-                self.timer_thread = threading.Thread(target=self.send_random_numbers_periodically)
-                self.timer_thread.start()
+                
+                if not self.is_running:
+                    self.is_running = True
+                    self.timer_thread = threading.Thread(target=self.send_random_numbers_periodically)
+                    self.timer_thread.start()
 
         if data['type'] == 'bingo':
             async_to_sync(self.checkBingo(int(data['userId']), data['calledNumbers']))
@@ -84,7 +86,6 @@ class GameConsumer(WebsocketConsumer):
     def send_random_numbers_periodically(self):
         from game.models import Game
         game = Game.objects.get(id=self.game_id)
-        game.played = "Started"
         game.started_at = timezone.now()
         game.save()
 
