@@ -60,7 +60,7 @@ class GameConsumer(WebsocketConsumer):
                         'message': 'Start Game' 
                     }
                 )
-                
+
                 if not self.is_running:
                     self.is_running = True
                     self.timer_thread = threading.Thread(target=self.send_random_numbers_periodically)
@@ -186,10 +186,10 @@ class GameConsumer(WebsocketConsumer):
         from itertools import chain
 
         # Flatten player_cards if it contains nested lists
-        if any(isinstance(i, list) for i in player_cards):
-            player_cards = list(chain.from_iterable(player_cards))
+        flat_player_cards = list(chain.from_iterable(player_cards)) if isinstance(player_cards[0], list) else player_cards
 
-        cards = Card.objects.filter(id__in=player_cards)
+        # Now, filter using the flat list of IDs
+        cards = Card.objects.filter(id__in=flat_player_cards)
 
         # Loop through all the cards assigned to the user
         for card in cards:
