@@ -102,6 +102,14 @@ class GameConsumer(WebsocketConsumer):
         game.played = 'Playing'
         game.save()
 
+        async_to_sync(self.channel_layer.group_send)(
+            self.room_group_name,
+            {
+                'type': 'playing',
+                'message': 'game is now playing' 
+            }
+        )
+
         # Send each number only once
         for num in self.game_random_numbers:
             if not self.is_running:
@@ -133,6 +141,13 @@ class GameConsumer(WebsocketConsumer):
         message = event['message']
         self.send(text_data=json.dumps({
             'type': 'game_start',
+            'message': message
+        }))
+
+    def playing(self, event):
+        message = event['message']
+        self.send(text_data=json.dumps({
+            'type': 'playing',
             'message': message
         }))
 

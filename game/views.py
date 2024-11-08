@@ -174,6 +174,7 @@ def get_game_stat(request, game_id, user_id):
         "no_players": game.numberofplayers,
         "bonus": game.bonus,
         "winner": game.winner_price,
+        "status": game.played
     }
 
     return Response(data)
