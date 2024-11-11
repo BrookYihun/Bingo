@@ -21,16 +21,27 @@ class GameConsumer(WebsocketConsumer):
     def connect(self):
         self.game_id = self.scope['url_route']['kwargs']['game_id']
         self.room_group_name = f'game_{self.game_id}'
-        # Join room group
-        async_to_sync(self.channel_layer.group_add)(
-            self.room_group_name,
-            self.channel_name
-        )
-        self.accept()
-
+        
         from game.models import Game
-        game = Game.objects.get(id=int(self.game_id))
-        self.game_random_numbers = json.loads(game.random_numbers)
+        try:
+            game = Game.objects.get(id=int(self.game_id))
+            
+            # Check if the game is already closed
+            if game.played == 'closed':
+                self.close()
+                return
+            
+            self.game_random_numbers = json.loads(game.random_numbers)
+            
+            # Join room group
+            async_to_sync(self.channel_layer.group_add)(
+                self.room_group_name,
+                self.channel_name
+            )
+            self.accept()
+        except Game.DoesNotExist:
+            # If the game does not exist, close the connection
+            self.close()
 
     def disconnect(self, close_code):
         # Leave room group
@@ -47,7 +58,6 @@ class GameConsumer(WebsocketConsumer):
             game = Game.objects.get(id=int(self.game_id))
 
             if game.played == "Started" and game.numberofplayers > 1:
-                    
                 self.send(text_data=json.dumps({
                     'type': 'timer_message',
                     'message': str(game.started_at)
@@ -74,6 +84,7 @@ class GameConsumer(WebsocketConsumer):
                     self.timer_thread.join()
                 if self.game_id in active_games:
                     del active_games[self.game_id]
+                self.close()  # Disconnect the WebSocket after a bingo
             else:
                 self.block(int(data['user_id']))
 
@@ -128,15 +139,17 @@ class GameConsumer(WebsocketConsumer):
 
             # Wait for a few seconds before sending the next number
             time.sleep(5)
-        
+
+        # Close the game after all numbers are sent
         time.sleep(10)
         game.played = 'closed'
         game.save()
         self.is_running = False
-        if self.timer_thread:
-            self.timer_thread.join()
+
+        # Remove from active games and disconnect the consumer
         if self.game_id in active_games:
             del active_games[self.game_id]
+        self.close()  # Disconnect the WebSocket after sending all numbers
 
 
     def random_number(self, event):
