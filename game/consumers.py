@@ -31,6 +31,12 @@ class GameConsumer(WebsocketConsumer):
                 self.close()
                 return
             
+            if game.played == 'Playing':
+                self.send(text_data=json.dumps({
+                    'type': 'called_numbers',
+                    'called_numbers': self.called_numbers
+                }))
+            
             self.game_random_numbers = json.loads(game.random_numbers)
             
             # Join room group
