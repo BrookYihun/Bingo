@@ -128,6 +128,16 @@ class GameConsumer(WebsocketConsumer):
 
             # Wait for a few seconds before sending the next number
             time.sleep(5)
+        
+        time.sleep(10)
+        game.played = 'closed'
+        game.save()
+        self.is_running = False
+        if self.timer_thread:
+            self.timer_thread.join()
+        if self.game_id in active_games:
+            del active_games[self.game_id]
+
 
     def random_number(self, event):
         """Handles individual random number events received from group_send."""
@@ -192,6 +202,12 @@ class GameConsumer(WebsocketConsumer):
             }))
             return
         
+        if game.winner != 0:
+            return
+        
+        if game.played == 'closed':
+            return 
+        
         # Include a zero at the end of the called numbers (for "free space" if applicable)
         called_numbers_list = calledNumbers + [0]
         game.total_calls = len(called_numbers_list)
@@ -230,7 +246,8 @@ class GameConsumer(WebsocketConsumer):
                 acc.save()
                 
                 # Close the game
-                game.played = "Close"
+                game.played = "closed"
+                game.winner = user_id
                 game.save()
                 
                 # Notify all players in the room group about the result
@@ -241,6 +258,7 @@ class GameConsumer(WebsocketConsumer):
                         'data': result
                     }
                 )
+                self.bingo = True
                 return  # Exit once Bingo is found for any card
 
         # If no Bingo was found for any card

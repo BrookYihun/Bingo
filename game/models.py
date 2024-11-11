@@ -20,6 +20,7 @@ class Game(models.Model):
     winner_price = models.DecimalField(max_digits=100,default=0,decimal_places=2)
     admin_cut = models.DecimalField(max_digits=100,default=0,decimal_places=2)
     bonus = models.IntegerField(default=0)
+    winner = models.IntegerField(default=0)
 
     def __str__(self) -> str:
         return f"Game number {self.id}"
