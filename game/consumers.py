@@ -31,7 +31,7 @@ class GameConsumer(WebsocketConsumer):
                 self.close()
                 return
 
-            await self.accept()
+            self.accept()
             
             if game.played == 'Playing':
                 self.send(text_data=json.dumps({
