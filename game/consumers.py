@@ -30,6 +30,8 @@ class GameConsumer(WebsocketConsumer):
             if game.played == 'closed':
                 self.close()
                 return
+
+            await self.accept()
             
             if game.played == 'Playing':
                 self.send(text_data=json.dumps({
@@ -44,7 +46,6 @@ class GameConsumer(WebsocketConsumer):
                 self.room_group_name,
                 self.channel_name
             )
-            self.accept()
         except Game.DoesNotExist:
             # If the game does not exist, close the connection
             self.close()
