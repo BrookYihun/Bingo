@@ -157,11 +157,13 @@ CORS_ALLOW_ALL_ORIGINS = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
-STATIC_URL = os.path.join(BASE_DIR, 'static/')
+STATIC_URL = '/static/'  # URL prefix for serving static files
 
-STATIC_ROOT = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'  # Directory where collectstatic will store files
 
-STATICFILES_DIRS = [BASE_DIR / "static"]
+STATICFILES_DIRS = [
+    BASE_DIR / 'static'  # Directory where you store your development static files
+]
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
