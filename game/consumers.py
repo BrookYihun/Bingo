@@ -93,7 +93,7 @@ class GameConsumer(WebsocketConsumer):
                     del active_games[self.game_id]
                 self.close()  # Disconnect the WebSocket after a bingo
             else:
-                self.block(int(data['user_id']))
+                self.block(int(data['userid']))
 
         if data['type'] == 'select_number':
             self.add_player(data['player_id'], data['card_id'])
@@ -229,6 +229,9 @@ class GameConsumer(WebsocketConsumer):
             return 
         
         # Include a zero at the end of the called numbers (for "free space" if applicable)
+        if not set(calledNumbers).issubset(self.called_numbers):
+            return
+        
         called_numbers_list = calledNumbers + [0]
         game.total_calls = len(called_numbers_list)
         game.save_called_numbers(called_numbers_list) 
@@ -339,11 +342,11 @@ class GameConsumer(WebsocketConsumer):
 
         return winning_numbers
 
-    def block(self, card_id):
+    def block(self, user_id):
         from game.models import Game
         last_game = Game.objects.get(id=self.game_id)
         players = json.loads(last_game.playerCard)
-        updated_list = [item for item in players if int(item['card']) != card_id]
+        updated_list = [item for item in players if int(item['user']) != user_id]
         last_game.playerCard = json.dumps(updated_list)
         last_game.numberofplayers = len(updated_list)
         last_game.save()
