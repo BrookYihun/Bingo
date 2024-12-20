@@ -179,3 +179,16 @@ def get_game_stat(request, game_id, user_id):
 
     return Response(data)
 
+def get_user_profile(request, user_id):
+    # Fetch the user by ID, or return a 404 if not found
+    user = get_object_or_404(User, id=user_id)
+
+    # Prepare the profile data
+    profile_data = {
+        "name": user.name,  # Use full name or username
+        "phone_number": user.phone_number,  # Check for phone_number attribute
+        "balance": user.wallet,  # Default balance to 0.0 if not present
+        "bonus": getattr(user, "bonus", 0.0),  # Default bonus to 0.0 if not present
+    }
+
+    return JsonResponse(profile_data)

@@ -4,19 +4,35 @@ import time
 from django.utils import timezone
 from channels.generic.websocket import WebsocketConsumer
 from asgiref.sync import async_to_sync
+import redis
 
 active_games = {}
 
 class GameConsumer(WebsocketConsumer):
     game_random_numbers = []
     called_numbers = []
-    timer_thread = None
-    is_running = False
-    bingo = False
+    lock = threading.Lock()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.lock = threading.Lock()
+        self.redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
+
+    def get_game_state(self, key):
+        """
+        Retrieve game state from Redis.
+        """
+        redis_key = f"game_state_{self.game_id}"
+        state = self.redis_client.hget(redis_key, key)
+        if state:
+            return json.loads(state)
+        return None
+
+    def set_game_state(self, key, value):
+        """
+        Save game state to Redis.
+        """
+        redis_key = f"game_state_{self.game_id}"
+        self.redis_client.hset(redis_key, key, json.dumps(value))
 
     def connect(self):
         self.game_id = self.scope['url_route']['kwargs']['game_id']
@@ -41,6 +57,13 @@ class GameConsumer(WebsocketConsumer):
             
             self.game_random_numbers = json.loads(game.random_numbers)
             
+            bingo = self.get_game_state("bingo")
+            is_running = self.get_game_state("is_running")
+            if not bingo:
+                self.set_game_state("bingo", False)
+            if not is_running:
+                self.set_game_state("is_running", False)
+            
             # Join room group
             async_to_sync(self.channel_layer.group_add)(
                 self.room_group_name,
@@ -59,6 +82,8 @@ class GameConsumer(WebsocketConsumer):
 
     def receive(self, text_data):
         data = json.loads(text_data)
+        is_running = self.get_game_state("is_running")
+        bingo = self.get_game_state("bingo")
 
         if data['type'] == 'game_start':
             from game.models import Game
@@ -78,22 +103,27 @@ class GameConsumer(WebsocketConsumer):
                     }
                 )
 
-                if not self.is_running:
-                    self.is_running = True
-                    self.timer_thread = threading.Thread(target=self.send_random_numbers_periodically)
-                    self.timer_thread.start()
+                if not is_running:
+                    self.set_game_state("is_running",True)
+
+                    thread = threading.Thread(target=self.send_random_numbers_periodically)
+                    thread.start()
+
 
         if data['type'] == 'bingo':
             async_to_sync(self.checkBingo(int(data['userId']), data['calledNumbers']))
-            if self.bingo:
-                self.is_running = False
-                if self.timer_thread:
-                    self.timer_thread.join()
+            bingo = self.get_game_state("bingo")
+            if bingo:
+                self.set_game_state("is_running",False)
                 if self.game_id in active_games:
                     del active_games[self.game_id]
-                self.close()  # Disconnect the WebSocket after a bingo
-            else:
-                self.block(int(data['userid']))
+                # self.close()  # Disconnect the WebSocket after a bingo
+            # else:
+            #     self.send(text_data=json.dumps({
+            #         'type': 'no_bingo',
+            #         'message': 'No Bingo! Please check your numbers and try again.'
+            #     }))
+                # self.block(int(data['userId']))
 
         if data['type'] == 'select_number':
             self.add_player(data['player_id'], data['card_id'])
@@ -106,6 +136,7 @@ class GameConsumer(WebsocketConsumer):
         game = Game.objects.get(id=self.game_id)
         game.started_at = timezone.now()
         game.save()
+        is_running = self.get_game_state("is_running")
 
         async_to_sync(self.channel_layer.group_send)(
             self.room_group_name,
@@ -130,7 +161,8 @@ class GameConsumer(WebsocketConsumer):
 
         # Send each number only once
         for num in self.game_random_numbers:
-            if not self.is_running:
+            is_running = self.get_game_state("is_running")
+            if not is_running:
                 break
 
             with self.lock:
@@ -151,7 +183,7 @@ class GameConsumer(WebsocketConsumer):
         time.sleep(10)
         game.played = 'closed'
         game.save()
-        self.is_running = False
+        self.set_game_state("is_running",False)
 
         # Remove from active games and disconnect the consumer
         if self.game_id in active_games:
@@ -204,7 +236,7 @@ class GameConsumer(WebsocketConsumer):
 
     def checkBingo(self, user_id, calledNumbers):
         from game.models import Card, Game
-        from custom_auth.models import AbstractUser, User
+        from custom_auth.models import User
         
         game = Game.objects.get(id=int(self.game_id))
         result = []
@@ -236,14 +268,26 @@ class GameConsumer(WebsocketConsumer):
         game.total_calls = len(called_numbers_list)
         game.save_called_numbers(called_numbers_list) 
         game.save()
+        
+        def flatten_card_ids(card_list):
+            """Recursively flatten card IDs to handle any nested lists."""
+            flattened = []
+            for card in card_list:
+                if isinstance(card, list):
+                    flattened.extend(flatten_card_ids(card))
+                else:
+                    flattened.append(int(card))
+            return flattened
+        
+        # Find and flatten all card IDs for the specified user
+        user_cards = []
+        for player in players:
+            if player['user'] == int(user_id):
+                # Flatten card IDs for this player
+                user_cards.extend(flatten_card_ids(player['card'] if isinstance(player['card'], list) else [player['card']]))
 
-        from itertools import chain
-
-        # Flatten player_cards if it contains nested lists
-        flat_player_cards = list(chain.from_iterable(player_cards)) if isinstance(player_cards[0], list) else player_cards
-
-        # Now, filter using the flat list of IDs
-        cards = Card.objects.filter(id__in=flat_player_cards)
+        # Fetch the Card objects
+        cards = Card.objects.filter(id__in=user_cards)
 
         # Loop through all the cards assigned to the user
         for card in cards:
@@ -253,20 +297,22 @@ class GameConsumer(WebsocketConsumer):
             winning_numbers = self.has_bingo(numbers, called_numbers_list)
             
             if winning_numbers:
+                
+                # Update user’s wallet with the prize
+                acc = User.objects.get(id=user_id)
+                acc.wallet += game.winner_price
+                acc.save()
+                
                 # Bingo achieved
                 result.append({
                     'card_name': card.id,
                     'message': 'Bingo',
-                    'card': numbers,
+                    'name': acc.name,
+                    'user_id': acc.id,
+                    'card': json.loads(card.numbers),
                     'winning_numbers': winning_numbers,
                     'called_numbers': called_numbers_list
                 })
-                
-                # Update user’s wallet with the prize
-                user = AbstractUser.objects.get(id=user_id)
-                acc = User.objects.get(user=user)
-                acc.wallet += game.winner_price
-                acc.save()
                 
                 # Close the game
                 game.played = "closed"
@@ -281,7 +327,7 @@ class GameConsumer(WebsocketConsumer):
                         'data': result
                     }
                 )
-                self.bingo = True
+                self.set_game_state("bingo",True)
                 return  # Exit once Bingo is found for any card
 
         # If no Bingo was found for any card

@@ -32,7 +32,8 @@ ALLOWED_HOSTS = [
     'www.dallolbingo.com',
     'https://www.dallolbingo.com',
     '127.0.0.1',
-    'localhost'
+    'localhost',
+    '172.20.10.2'
 ]
 
 CORS_ALLOWED_ORIGINS = [
