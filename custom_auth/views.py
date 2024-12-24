@@ -7,6 +7,11 @@ from .models import User
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 from .serializer import UserSerializer  # Make sure you have a serializer for User model
+import random
+import requests
+from django.conf import settings
+from .models import OTP
+
 
 def get_tokens_for_user(user):
     refresh = RefreshToken.for_user(user)
@@ -55,6 +60,12 @@ class LoginView(APIView):
         # Authenticate the user
         user = authenticate(phone_number=phone_number, password=password)
         if user:
+            if not user.is_verified:
+                return Response(
+                    {"error": "Not Verfied User! Verify"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
             tokens = get_tokens_for_user(user)
             user_data = UserSerializer(user).data  # Serialize user data
             
@@ -88,6 +99,10 @@ def custom_csrf_protect(view_func):
         if not user.is_authenticated:
             # Handle unauthenticated users
             return HttpResponseForbidden('User is not authenticated')
+        
+        if request.user.is_authenticated and not request.user.is_verified:
+            # Handle unverfied users
+            return HttpResponseForbidden('User is not verfied')           
 
         # Retrieve the expected token from the database or wherever it's stored
 
@@ -108,3 +123,58 @@ def custom_csrf_protect(view_func):
         return view_func(request, *args, **kwargs)
 
     return _wrapped_view
+
+class SendOTPView(APIView):
+    def post(self, request):
+        phone_number = request.data.get("phone_number")
+
+        if not phone_number:
+            return Response({"error": "Phone number is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Generate a random 6-digit OTP
+        otp = str(random.randint(100000, 999999))
+
+        # Save OTP in the database
+        OTP.objects.create(phone_number=phone_number, otp=otp)
+
+        # Send OTP via the OTP provider API
+        payload = {
+            "to": phone_number,
+            "message": f"Your verification code is {otp}",
+        }
+        headers = {
+            "Authorization": f"Bearer {settings.OTP_PROVIDER_API_KEY}",
+            "Content-Type": "application/json",
+        }
+
+        try:
+            response = requests.post(settings.OTP_PROVIDER_API_URL, json=payload, headers=headers)
+            if response.status_code == 200:
+                return Response({"message": "OTP sent successfully"}, status=status.HTTP_200_OK)
+            else:
+                return Response({"error": "Failed to send OTP"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except requests.exceptions.RequestException as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class VerifyOTPView(APIView):
+    def post(self, request):
+        phone_number = request.data.get("phone_number")
+        otp = request.data.get("otp")
+        user = User.objects.get(phone_number=phone_number)
+        if not phone_number or not otp:
+            return Response({"error": "Phone number and OTP are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check if OTP exists and matches
+        try:
+            otp_record = OTP.objects.get(phone_number=phone_number, otp=otp)
+            if otp_record.is_expired():
+                return Response({"error": "OTP has expired"}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Delete OTP after successful verification
+            otp_record.delete()
+            user.verify_otp()
+
+            return Response({"message": "OTP verified successfully"}, status=status.HTTP_200_OK)
+
+        except OTP.DoesNotExist:
+            return Response({"error": "Invalid OTP or phone number"}, status=status.HTTP_400_BAD_REQUEST)

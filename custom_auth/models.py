@@ -1,6 +1,8 @@
 from django.db import models
 from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
+from django.utils.timezone import now
+from datetime import timedelta
 
 # Custom manager for handling user creation and authentication via phone number
 class CustomUserManager(BaseUserManager):
@@ -30,6 +32,7 @@ class AbstractUser(AbstractBaseUser,PermissionsMixin):
     phone_number = models.CharField(max_length=15, unique=True)
     name = models.CharField(max_length=100)
     date_joined = models.DateTimeField(auto_now_add=True)
+    is_verified = models.BooleanField(default=False)
     
     is_staff = models.BooleanField(default=False)  # Added for admin access
     is_active = models.BooleanField(default=True)  # Added for active users
@@ -39,8 +42,22 @@ class AbstractUser(AbstractBaseUser,PermissionsMixin):
 
     objects = CustomUserManager()
 
+    def verify_otp(self):
+        self.is_verified = True
+        self.save()
+
     def __str__(self):
         return self.phone_number
+    
+
+class OTP(models.Model):
+    phone_number = models.CharField(max_length=15)
+    otp = models.CharField(max_length=6)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def is_expired(self):
+        return now() > self.created_at + timedelta(seconds=300)  # 5 minutes expiry
+
 
 # User model with specific fields
 class User(AbstractUser):
@@ -55,3 +72,4 @@ class Cashier(AbstractUser):
 
     def __str__(self):
         return f"Cashier: {self.name}"
+
