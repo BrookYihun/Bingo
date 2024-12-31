@@ -163,6 +163,7 @@ class SendOTPView(APIView):
 
             if response.status_code == 200:
                 result = response.json()
+                print(result.get("acknowledge"))
                 if result.get("acknowledge") == "success":
                     return Response({"message": "OTP sent successfully"}, status=status.HTTP_200_OK)
                 else:
