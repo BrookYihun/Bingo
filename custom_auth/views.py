@@ -158,6 +158,8 @@ class SendOTPView(APIView):
         try:
             # Send the request to the OTP provider
             response = requests.get(url, headers=headers)
+            
+            print(response)
 
             if response.status_code == 200:
                 result = response.json()
