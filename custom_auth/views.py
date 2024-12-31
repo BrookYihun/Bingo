@@ -167,7 +167,9 @@ class SendOTPView(APIView):
                 if result.get("acknowledge") == "success":
                     return Response({"message": "OTP sent successfully"}, status=status.HTTP_200_OK)
                 else:
-                    return Response({"error": "Failed to send OTP: API error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    error_result = result.get("response").json()
+                    errors = error_result.get("errors") 
+                    return Response({"error": f"Failed to send OTP: {str(errors)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             else:
                 return Response(
                     {"error": f"Failed to send OTP: HTTP error {response.status_code}, {response.content}"},
