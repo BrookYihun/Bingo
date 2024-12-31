@@ -131,50 +131,90 @@ class SendOTPView(APIView):
         if not phone_number:
             return Response({"error": "Phone number is required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Generate a random 6-digit OTP
-        otp = str(random.randint(100000, 999999))
+        # API parameters
+        base_url = settings.OTP_PROVIDER_API_URL + "/challenge"
+        token = settings.OTP_PROVIDER_API_KEY
+        headers = {'Authorization': f'Bearer {token}'}
+        
+        # Custom parameters for the request
+        # callback = settings.OTP_CALLBACK_URL
+        sender = settings.OTP_SENDER_NAME
+        # identifier = settings.OTP_IDENTIFIER_ID
+        prefix = settings.OTP_MESSAGE_PREFIX
+        postfix = settings.OTP_MESSAGE_POSTFIX
+        spaces_before = 0
+        spaces_after = 0
+        ttl = settings.OTP_EXPIRY_TIME
+        code_length = 6
+        code_type = 1
 
-        # Save OTP in the database
-        OTP.objects.create(phone_number=phone_number, otp=otp)
-
-        # Send OTP via the OTP provider API
-        payload = {
-            "to": phone_number,
-            "message": f"Your verification code is {otp}",
-        }
-        headers = {
-            "Authorization": f"Bearer {settings.OTP_PROVIDER_API_KEY}",
-            "Content-Type": "application/json",
-        }
+        # Construct the final URL
+        url = (
+            f"{base_url}?&sender={sender}&to={phone_number}"
+            f"&pr={prefix}&ps={postfix}&sb={spaces_before}"
+            f"&sa={spaces_after}&ttl={ttl}&len={code_length}&t={code_type}"
+        )
 
         try:
-            response = requests.post(settings.OTP_PROVIDER_API_URL, json=payload, headers=headers)
-            if response.status_code == 200:
-                return Response({"message": "OTP sent successfully"}, status=status.HTTP_200_OK)
-            else:
-                return Response({"error": "Failed to send OTP"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        except requests.exceptions.RequestException as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            # Send the request to the OTP provider
+            response = requests.get(url, headers=headers)
 
+            if response.status_code == 200:
+                result = response.json()
+                if result.get("acknowledge") == "success":
+                    return Response({"message": "OTP sent successfully"}, status=status.HTTP_200_OK)
+                else:
+                    return Response({"error": "Failed to send OTP: API error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            else:
+                return Response(
+                    {"error": f"Failed to send OTP: HTTP error {response.status_code}, {response.content}"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+        except requests.exceptions.RequestException as e:
+            return Response({"error": f"Request failed: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
 class VerifyOTPView(APIView):
     def post(self, request):
         phone_number = request.data.get("phone_number")
         otp = request.data.get("otp")
-        user = User.objects.get(phone_number=phone_number)
+
         if not phone_number or not otp:
             return Response({"error": "Phone number and OTP are required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Check if OTP exists and matches
+        # API parameters
+        base_url = settings.OTP_VERIFY_API_URL +"/verify"
+        token = settings.OTP_PROVIDER_API_KEY
+        headers = {'Authorization': f'Bearer {token}'}
+        url = f"{base_url}?to={phone_number}&code={otp}"
+
         try:
-            otp_record = OTP.objects.get(phone_number=phone_number, otp=otp)
-            if otp_record.is_expired():
-                return Response({"error": "OTP has expired"}, status=status.HTTP_400_BAD_REQUEST)
+            # Make the API request to verify OTP
+            response = requests.get(url, headers=headers)
 
-            # Delete OTP after successful verification
-            otp_record.delete()
-            user.verify_otp()
+            if response.status_code == 200:
+                result = response.json()
+                if result.get("acknowledge") == "success":
+                    # Verification succeeded
+                    try:
+                        # Assuming User model has a phone_number field
+                        user = User.objects.get(phone_number=phone_number)
 
-            return Response({"message": "OTP verified successfully"}, status=status.HTTP_200_OK)
+                        # Assuming OTP verification method exists in User model
+                        user.verify_otp()
 
-        except OTP.DoesNotExist:
-            return Response({"error": "Invalid OTP or phone number"}, status=status.HTTP_400_BAD_REQUEST)
+                        # Delete OTP record from local DB (optional if not needed anymore)
+                        OTP.objects.filter(phone_number=phone_number, otp=otp).delete()
+
+                        return Response({"message": "OTP verified successfully"}, status=status.HTTP_200_OK)
+                    except User.DoesNotExist:
+                        return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+                else:
+                    return Response({"error": "Invalid OTP or verification failed"}, status=status.HTTP_400_BAD_REQUEST)
+            else:
+                return Response(
+                    {"error": f"Failed to verify OTP: HTTP error {response.status_code}, {response.content}"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+        except requests.exceptions.RequestException as e:
+            return Response({"error": f"Request failed: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

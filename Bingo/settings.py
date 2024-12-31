@@ -182,6 +182,9 @@ CHANNEL_LAYERS = {
     },
 }
 
-OTP_PROVIDER_API_URL = "https://api.afromessage.com/api/send"  # Replace with your provider's API URL
+OTP_PROVIDER_API_URL = "https://api.afromessage.com/api"  # Replace with your provider's API URL
 OTP_PROVIDER_API_KEY = "eyJhbGciOiJIUzI1NiJ9.eyJpZGVudGlmaWVyIjoiTUg4aGRvSnczUnhYSHd4OVFYUkJBWERqaFNrOVR1ZjAiLCJleHAiOjE4OTI4MTMyNDcsImlhdCI6MTczNTA0Njg0NywianRpIjoiZTgxMmM0ZDEtMjc1MS00NzkwLWFiOWQtM2I2MzlmZTI2YmI3In0.UA1JI7A7n9WJuDkBMANOryMIjbzppW_W1Bg9Pf12Uzc"  # Replace with your API key
 OTP_EXPIRY_TIME = 300  # OTP expiry time in seconds (e.g., 5 minutes)
+OTP_SENDER_NAME = "Dallol Games"
+OTP_MESSAGE_PREFIX = "Wellcome to Dallol Games"
+OTP_MESSAGE_POSTFIX = "" 
