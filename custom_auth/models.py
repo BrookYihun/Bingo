@@ -49,16 +49,6 @@ class AbstractUser(AbstractBaseUser,PermissionsMixin):
     def __str__(self):
         return self.phone_number
     
-
-class OTP(models.Model):
-    phone_number = models.CharField(max_length=15)
-    otp = models.CharField(max_length=6)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def is_expired(self):
-        return now() > self.created_at + timedelta(seconds=300)  # 5 minutes expiry
-
-
 # User model with specific fields
 class User(AbstractUser):
     wallet = models.DecimalField(max_digits=10, decimal_places=2,default=0)
