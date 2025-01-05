@@ -10,6 +10,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .serializer import UserSerializer  # Make sure you have a serializer for User model
 import requests
 from django.conf import settings
+from django.contrib.auth.decorators import login_required
 
 
 def get_tokens_for_user(user):
@@ -84,45 +85,14 @@ class LoginView(APIView):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-def custom_csrf_protect(view_func):
+def require_verified_user(view_func):
     """
-    Decorator for views that checks the request for a custom CSRF token.
+    Ensures the user is authenticated and verified.
     """
+    @login_required
     def _wrapped_view(request, *args, **kwargs):
-        # Retrieve the custom token from the request
-        custom_token = request.META.get('HTTP_X_CUSTOM_CSRF_TOKEN')
-
-        if not custom_token:
-            # Handle missing token
-            return HttpResponseForbidden('CSRF token missing')
-
-        # Retrieve the user based on authentication (assuming user is authenticated)
-        user = request.user
-
-        if not user.is_authenticated:
-            # Handle unauthenticated users
-            return HttpResponseForbidden('User is not authenticated')
-        
-        if request.user.is_authenticated and not request.user.is_verified:
-            # Handle unverfied users
-            return HttpResponseForbidden('User is not verfied')           
-
-        # Retrieve the expected token from the database or wherever it's stored
-
-        decoded_custom_token = base64.b64decode(custom_token)
-
-        parts = decoded_custom_token.split(':')
-
-        if len(parts)!=2:
-            return HttpResponseForbidden('Invalid CSRF token')
-        
-        check_user = authenticate(request, username=parts[0], password=parts[1])
-
-        if check_user is None or check_user.is_authenticated is False:
-            # Handle invalid token
-            return HttpResponseForbidden('Invalid CSRF token')
-
-        # Call the actual view function if the token is valid
+        if not request.user.is_verified:
+            return HttpResponseForbidden('User is not verified')
         return view_func(request, *args, **kwargs)
 
     return _wrapped_view

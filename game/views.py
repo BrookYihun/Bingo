@@ -4,7 +4,7 @@ from django.utils import timezone
 from django.http import JsonResponse
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from custom_auth.views import custom_csrf_protect
+from custom_auth.views import require_verified_user
 from django.shortcuts import get_object_or_404
 
 import random
@@ -13,7 +13,7 @@ from game.models import Game
 from custom_auth.models import User
 from game.models import Card
 
-@custom_csrf_protect
+@require_verified_user
 def get_bingo_card(request):
     # Retrieve the card ID(s) from the request parameters
     card_ids = request.GET.getlist('cardId')
@@ -45,7 +45,7 @@ def get_bingo_card(request):
         # Catch any unexpected errors and return a server error response
         return JsonResponse({"error": str(e)}, status=500)
 
-@custom_csrf_protect
+@require_verified_user
 def get_playing_bingo_card(request):
     user_id = request.GET.get('userId')
     game_id = request.GET.get('gameId')
@@ -97,7 +97,7 @@ def get_playing_bingo_card(request):
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
 
-@custom_csrf_protect
+@require_verified_user
 def generate_random_numbers():
     # Generate a list of numbers from 1 to 75
     numbers = list(range(1, 76))
@@ -107,7 +107,7 @@ def generate_random_numbers():
     
     return numbers
 
-@custom_csrf_protect
+@require_verified_user
 def get_active_games(request):
     # Query to count active games by stake where the game status is 'Started'
     active_games = (
@@ -123,7 +123,7 @@ def get_active_games(request):
         'activeGames': result
     })
 
-@custom_csrf_protect
+@require_verified_user
 def start_game(request, stake):
     # Check if there is an active game with the chosen stake
     active_game = Game.objects.filter(stake=stake, played='Started').order_by('-created_at').first()
@@ -155,7 +155,7 @@ def start_game(request, stake):
         'message': f'New game created for stake {stake}'
     })
 
-@custom_csrf_protect
+@require_verified_user
 @api_view(['GET'])
 def get_game_stat(request, game_id, user_id):
     # Retrieve the game instance by ID
@@ -183,7 +183,7 @@ def get_game_stat(request, game_id, user_id):
 
     return Response(data)
 
-@custom_csrf_protect
+@require_verified_user
 def get_user_profile(request, user_id):
     # Fetch the user by ID, or return a 404 if not found
     user = get_object_or_404(User, id=user_id)
