@@ -64,7 +64,7 @@ MIDDLEWARE = [
     # 'django.contrib.sessions.middleware.SessionMiddleware',  # Removed session middleware
     'django.middleware.common.CommonMiddleware',
     # 'django.middleware.csrf.CsrfViewMiddleware',  # Optional if you don't need CSRF protection
-    'django.contrib.messages.middleware.MessageMiddleware',
+    # 'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'corsheaders.middleware.CorsMiddleware',
 ]
