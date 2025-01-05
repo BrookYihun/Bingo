@@ -1,7 +1,7 @@
 import base64
 import datetime
 from django.http import HttpResponseForbidden
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.decorators import permission_classes
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -21,7 +21,8 @@ def get_tokens_for_user(user):
         'refresh': str(refresh),
         'access': str(refresh.access_token),
     }
-
+    
+@permission_classes([AllowAny])
 class RegisterView(APIView):
     def post(self, request):
         phone_number = request.data.get('phone_number')
@@ -57,7 +58,7 @@ class RegisterView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-
+@permission_classes([AllowAny])
 class LoginView(APIView):
     def post(self, request):
         phone_number = request.data.get('phone_number')
@@ -99,6 +100,7 @@ def require_verified_user(view_func):
 
     return _wrapped_view
 
+@permission_classes([AllowAny])
 class SendOTPView(APIView):
     def post(self, request):
         phone_number = request.data.get("phone_number")
@@ -152,7 +154,8 @@ class SendOTPView(APIView):
                 )
         except requests.exceptions.RequestException as e:
             return Response({"error": f"Request failed: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+
+@permission_classes([AllowAny])        
 class VerifyOTPView(APIView):
     def post(self, request):
         phone_number = request.data.get("phone_number")
@@ -198,6 +201,7 @@ class VerifyOTPView(APIView):
 
         except requests.exceptions.RequestException as e:
             return Response({"error": f"Request failed: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
     
 def send_otp_for_register(phone_number):
 
