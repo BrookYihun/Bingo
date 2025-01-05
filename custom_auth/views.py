@@ -1,6 +1,8 @@
 import base64
 import datetime
 from django.http import HttpResponseForbidden
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import permission_classes
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -242,6 +244,7 @@ def send_otp_for_register(phone_number):
     
 
 @require_verified_user
+@permission_classes([IsAuthenticated])
 def get_balance(request):
     """
     Retrieve the wallet balance for the authenticated user.
