@@ -188,3 +188,22 @@ OTP_EXPIRY_TIME = 300  # OTP expiry time in seconds (e.g., 5 minutes)
 OTP_SENDER_NAME = "Dallol Games"
 OTP_MESSAGE_PREFIX = "Wellcome to Dallol Games"
 OTP_MESSAGE_POSTFIX = "" 
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'DEBUG',
+    },
+    'django.request': {
+        'handlers': ['console'],
+        'level': 'DEBUG',
+        'propagate': False,
+    },
+}
