@@ -241,7 +241,7 @@ def send_otp_for_register(phone_number):
         return str(e)
     
 
-@custom_csrf_protect
+@require_verified_user
 def get_balance(request):
     """
     Retrieve the wallet balance for the authenticated user.
