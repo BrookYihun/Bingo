@@ -162,7 +162,6 @@ def start_game(request, stake):
     })
 
 @require_verified_user
-@api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_game_stat(request, game_id, user_id):
     # Retrieve the game instance by ID
