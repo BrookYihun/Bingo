@@ -3,9 +3,9 @@ import json
 from django.utils import timezone
 from django.http import JsonResponse
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import permission_classes
 from rest_framework.response import Response
-from custom_auth.views import require_verified_user
+
 from django.shortcuts import get_object_or_404
 
 import random
@@ -14,7 +14,7 @@ from game.models import Game
 from custom_auth.models import User
 from game.models import Card
 
-@require_verified_user
+
 @permission_classes([IsAuthenticated])
 def get_bingo_card(request):
     # Retrieve the card ID(s) from the request parameters
@@ -47,7 +47,7 @@ def get_bingo_card(request):
         # Catch any unexpected errors and return a server error response
         return JsonResponse({"error": str(e)}, status=500)
 
-@require_verified_user
+
 @permission_classes([IsAuthenticated])
 def get_playing_bingo_card(request):
     user_id = request.GET.get('userId')
@@ -100,7 +100,7 @@ def get_playing_bingo_card(request):
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
 
-@require_verified_user
+
 @permission_classes([IsAuthenticated])
 def generate_random_numbers():
     # Generate a list of numbers from 1 to 75
@@ -111,7 +111,7 @@ def generate_random_numbers():
     
     return numbers
 
-@require_verified_user
+
 @permission_classes([IsAuthenticated])
 def get_active_games(request):
     # Query to count active games by stake where the game status is 'Started'
@@ -128,7 +128,7 @@ def get_active_games(request):
         'activeGames': result
     })
 
-@require_verified_user
+
 @permission_classes([IsAuthenticated])
 def start_game(request, stake):
     # Check if there is an active game with the chosen stake
@@ -161,7 +161,7 @@ def start_game(request, stake):
         'message': f'New game created for stake {stake}'
     })
 
-@require_verified_user
+
 @permission_classes([IsAuthenticated])
 def get_game_stat(request, game_id, user_id):
     # Retrieve the game instance by ID
@@ -189,7 +189,7 @@ def get_game_stat(request, game_id, user_id):
 
     return Response(data)
 
-@require_verified_user
+
 @permission_classes([IsAuthenticated])
 def get_user_profile(request, user_id):
     # Fetch the user by ID, or return a 404 if not found

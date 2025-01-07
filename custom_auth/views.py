@@ -128,17 +128,6 @@ class LoginView(APIView):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-def require_verified_user(view_func):
-    """
-    Ensures the user is authenticated and verified.
-    """
-    @login_required
-    def _wrapped_view(request, *args, **kwargs):
-        if not request.user.is_verified:
-            return HttpResponseForbidden('User is not verified')
-        return view_func(request, *args, **kwargs)
-
-    return _wrapped_view
 
 @permission_classes([AllowAny])
 class SendOTPView(APIView):
@@ -287,7 +276,7 @@ def send_otp_for_register(phone_number):
         return str(e)
     
 
-@require_verified_user
+
 @permission_classes([IsAuthenticated])
 def get_balance(request,user_id):
     """
