@@ -20,7 +20,7 @@ ALLOWED_HOSTS = [
     'https://www.dallolbingo.com',
     '127.0.0.1',
     'localhost',
-    '172.20.10.2'
+    '172.20.10.2',
 ]
 
 CORS_ALLOWED_ORIGINS = [
@@ -28,7 +28,8 @@ CORS_ALLOWED_ORIGINS = [
     'https://dallolbingo.com',
     'http://www.dallolbingo.com',
     'https://www.dallolbingo.com',
-    'http://localhost:3000'
+    'http://localhost:3000',
+    '*'
     # Add other origins as needed
 ]
 
@@ -37,7 +38,8 @@ CSRF_TRUSTED_ORIGINS = [
     'https://dallolbingo.com',
     'http://www.dallolbingo.com',
     'https://www.dallolbingo.com',
-    'http://localhost:3000'
+    'http://localhost:3000',
+    '*'
 ]
 
 # Application definition
