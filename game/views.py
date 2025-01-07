@@ -168,7 +168,7 @@ def get_game_stat(request, game_id, user_id):
     # Retrieve the game instance by ID
     game = get_object_or_404(Game, id=game_id)
     # Retrieve the user instance by ID
-    user = get_object_or_404(User, id=1)
+    user = get_object_or_404(User, id=user_id)
 
      # Load the existing player card data or initialize as an empty list
     try:
