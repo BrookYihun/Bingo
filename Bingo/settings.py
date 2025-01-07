@@ -29,7 +29,6 @@ CORS_ALLOWED_ORIGINS = [
     'http://www.dallolbingo.com',
     'https://www.dallolbingo.com',
     'http://localhost:3000',
-    '*'
     # Add other origins as needed
 ]
 
@@ -39,7 +38,6 @@ CSRF_TRUSTED_ORIGINS = [
     'http://www.dallolbingo.com',
     'https://www.dallolbingo.com',
     'http://localhost:3000',
-    '*'
 ]
 
 # Application definition
@@ -167,23 +165,3 @@ OTP_SENDER_NAME = "Dallol Games"
 OTP_MESSAGE_PREFIX = "Wellcome to Dallol Games"
 OTP_MESSAGE_POSTFIX = "" 
 
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-        },
-    },
-    'loggers': {
-        'django': {
-            'handlers': ['console'],
-            'level': 'DEBUG',
-        },
-        'django.request': {
-            'handlers': ['console'],
-            'level': 'DEBUG',
-            'propagate': False,
-        },
-    },
-}
