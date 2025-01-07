@@ -199,8 +199,8 @@ def get_user_profile(request, user_id):
     profile_data = {
         "name": user.name,  # Use full name or username
         "phone_number": user.phone_number,  # Check for phone_number attribute
-        "balance": user.wallet,  # Default balance to 0.0 if not present
-        "bonus": getattr(user, "bonus", 0.0),  # Default bonus to 0.0 if not present
+        "balance":int(user.wallet),  # Default balance to 0.0 if not present
+        "bonus": int(user.bonus),  # Default bonus to 0.0 if not present
     }
 
     return JsonResponse(profile_data)

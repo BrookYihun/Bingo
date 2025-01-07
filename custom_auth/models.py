@@ -52,6 +52,7 @@ class AbstractUser(AbstractBaseUser,PermissionsMixin):
 # User model with specific fields
 class User(AbstractUser):
     wallet = models.DecimalField(max_digits=10, decimal_places=2,default=0)
+    bonus = models.DecimalField(max_digits=10,decimal_places=2,default=0)
 
     def __str__(self):
         return self.name
