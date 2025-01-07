@@ -47,7 +47,6 @@ def get_tokens_for_user(user_id, request=None):
             'sessionid': session_key,
         }
 
-@api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def refresh_session(request):
     user_id = request.data.get('user_id')
@@ -290,13 +289,13 @@ def send_otp_for_register(phone_number):
 
 @require_verified_user
 @permission_classes([IsAuthenticated])
-def get_balance(request):
+def get_balance(request,user_id):
     """
     Retrieve the wallet balance for the authenticated user.
     """
     try:
         # Access the authenticated user
-        user = request.user
+        user = get_object_or_404(User, id=user_id)
 
         # Check if the user is verified
         if not user.is_verified:
