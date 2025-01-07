@@ -1,27 +1,66 @@
 import base64
 import datetime
 from django.http import HttpResponseForbidden
+from django.shortcuts import get_object_or_404
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.decorators import permission_classes
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from .models import User
-from django.contrib.auth import authenticate
+from django.contrib.auth import authenticate, login
 from rest_framework_simplejwt.tokens import RefreshToken
 from .serializer import UserSerializer  # Make sure you have a serializer for User model
 import requests
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
+from django.contrib.sessions.models import Session
+from django.contrib.sessions.backends.db import SessionStore
+from rest_framework.decorators import api_view
+from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
+from rest_framework.exceptions import ValidationError
 
 
-def get_tokens_for_user(user):
-    refresh = RefreshToken.for_user(user)
-    return {
-        'refresh': str(refresh),
-        'access': str(refresh.access_token),
-    }
-    
+# Function to generate JWT tokens and session ID
+def get_tokens_for_user(user_id, request=None):
+    # Generate JWT tokens
+    user = user = get_object_or_404(User, id=user_id)
+    if(user):
+        refresh = RefreshToken.for_user(user)
+
+        # Create a session for the user if it doesn't exist
+        if request and not request.session.session_key:
+            login(request, user)  # Log the user in and create a session
+        else:
+            # Manually create a session if no request is passed
+            session = SessionStore()
+            session['user_id'] = user.id  # Store user-specific data in the session
+            session.create()
+            session_key = session.session_key
+        
+        session_key = request.session.session_key if request else session.session_key
+
+        # Return tokens and session ID
+        return {
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+            'sessionid': session_key,
+        }
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def refresh_session(request):
+    user_id = request.data.get('user_id')
+
+    # Validate the user ID
+    if not user_id or user_id != request.user.id:
+        return Response({"error": "Invalid user ID"}, status=status.HTTP_400_BAD_REQUEST)
+
+    tokens = get_tokens_for_user(user_id, request)
+
+    return Response({"tokens": tokens}, status=status.HTTP_200_OK)
+
+# Registration view
 @permission_classes([AllowAny])
 class RegisterView(APIView):
     def post(self, request):
@@ -57,7 +96,8 @@ class RegisterView(APIView):
                 {"error": response},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
+# Login view
 @permission_classes([AllowAny])
 class LoginView(APIView):
     def post(self, request):
@@ -69,20 +109,21 @@ class LoginView(APIView):
         if user:
             if not user.is_verified:
                 return Response(
-                    {"error": "Not Verfied User! Verify"},
+                    {"error": "Not Verified User! Verify"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            
-            tokens = get_tokens_for_user(user)
+
+            # Generate tokens and session ID
+            tokens = get_tokens_for_user(user.id, request)
             user_data = UserSerializer(user).data  # Serialize user data
-            
+
             # Combine tokens with user data
             response_data = {
                 "tokens": tokens,
                 "user": user_data,
             }
             return Response(response_data, status=status.HTTP_200_OK)
-        
+
         return Response(
             {"error": "Invalid phone number or password"},
             status=status.HTTP_400_BAD_REQUEST
@@ -185,7 +226,7 @@ class VerifyOTPView(APIView):
                         # Assuming OTP verification method exists in User model
                         user.verify_otp()
                         
-                        tokens = get_tokens_for_user(user)
+                        tokens = get_tokens_for_user(user.id,request)
                         user_data = UserSerializer(user).data
 
                         return Response({"message": "OTP verified successfully", "tokens": tokens, "user": user_data}, status=status.HTTP_200_OK)
@@ -306,20 +347,46 @@ def is_token_not_expired(token, expiration_minutes=30):
         return False
 
 
+@api_view(["GET"])
 def verify_token(request):
-
     try:
-        token = request.GET('token', None)  # Retrieve the token from the body parameter
+        # Retrieve tokens from the request
+        access_token = request.GET.get('access', None)
+        refresh_token = request.GET.get('refresh', None)
+        session_id = request.GET.get('sessionid', None)
 
-        if not token:
-            return Response({"error": "CSRF token missing"}, status=403)
+        # Validate Access Token
+        if access_token:
+            try:
+                AccessToken(access_token)  # Verifies token validity
+            except ValidationError:
+                return Response({"error": "Invalid or expired access token"}, status=403)
+        else:
+            return Response({"error": "Access token missing"}, status=403)
 
-        # Verify if the token is not expired
-        if not is_token_not_expired(token, expiration_minutes=30):
-            return Response({"error": "CSRF token expired"}, status=403)
+        # Validate Refresh Token
+        if refresh_token:
+            try:
+                RefreshToken(refresh_token)  # Verifies token validity
+            except ValidationError:
+                return Response({"error": "Invalid or expired refresh token"}, status=403)
+        else:
+            return Response({"error": "Refresh token missing"}, status=403)
 
-        # Token is valid and not expired
-        return Response({"message": "Token is valid"})
+        # Validate Session ID
+        if session_id:
+            try:
+                session = Session.objects.get(session_key=session_id)
+                session_data = session.get_decoded()
+                if 'user_id' not in session_data:
+                    return Response({"error": "Invalid session"}, status=403)
+            except Session.DoesNotExist:
+                return Response({"error": "Invalid or expired session ID"}, status=403)
+        else:
+            return Response({"error": "Session ID missing"}, status=403)
+
+        # All tokens are valid
+        return Response({"message": "All tokens are valid"}, status=200)
 
     except Exception as e:
-        return Response({"error": f"str(e)"}, status=400)
+        return Response({"error": str(e)}, status=400)
