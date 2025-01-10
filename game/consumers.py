@@ -139,8 +139,8 @@ class GameConsumer(WebsocketConsumer):
         game = Game.objects.get(id=self.game_id)
         game.started_at = timezone.now()
         players = json.loads(game.playerCard)
-        total_cards = sum(len(player["card"]) for player in players)
-        game.numberofplayers = total_cards
+        total_cards = sum(len(sublist) for player in players for sublist in player["card"])
+        game.numberofplayers = int(total_cards)
         print(total_cards)
         winner_price = total_cards * game.stake
         if winner_price >= 100:
