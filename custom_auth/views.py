@@ -128,7 +128,7 @@ class LoginView(APIView):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-
+@api_view(['GET'])
 @permission_classes([AllowAny])
 class SendOTPView(APIView):
     def post(self, request):
@@ -184,6 +184,7 @@ class SendOTPView(APIView):
         except requests.exceptions.RequestException as e:
             return Response({"error": f"Request failed: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+@api_view(['GET'])
 @permission_classes([AllowAny])        
 class VerifyOTPView(APIView):
     def post(self, request):
@@ -276,7 +277,7 @@ def send_otp_for_register(phone_number):
         return str(e)
     
 
-
+@api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_balance(request,user_id):
     """
@@ -378,7 +379,8 @@ def verify_token(request):
 
     except Exception as e:
         return Response({"error": str(e)}, status=400)
- 
+
+@api_view(['GET']) 
 @permission_classes([AllowAny])   
 def telegram_login(request):
     session_key = request.GET.get('session_key')
