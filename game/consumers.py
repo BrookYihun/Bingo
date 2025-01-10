@@ -439,6 +439,7 @@ class GameConsumer(WebsocketConsumer):
             # Initialize players list if it's empty or not properly formatted
             players = [{'user': player_id, 'card': [card_id]}]
 
+        from decimal import Decimal
         # Get the user and check balance
         user = User.objects.get(id=player_id)
         print(card_id)
@@ -457,7 +458,6 @@ class GameConsumer(WebsocketConsumer):
             )
             return
         
-        from decimal import Decimal
         # Deduct the stake amount from the user's wallet
         user.wallet -= Decimal(total_cost)
         user.save()
