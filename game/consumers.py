@@ -442,7 +442,8 @@ class GameConsumer(WebsocketConsumer):
         # Get the user and check balance
         user = User.objects.get(id=player_id)
         print(card_id)
-        total_cost = game.stake * len(card_id)
+        card_list = card_id if isinstance(card_id, list) else [card_id]
+        total_cost = Decimal(game.stake) * len(card_list) 
         print(total_cost)
 
         if user.wallet < total_cost:
