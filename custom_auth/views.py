@@ -335,6 +335,7 @@ def is_token_not_expired(token, expiration_minutes=30):
 
 
 @api_view(["GET"])
+@permission_classes([AllowAny])   
 def verify_token(request):
     try:
         # Retrieve tokens from the request
