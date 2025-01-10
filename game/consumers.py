@@ -142,7 +142,7 @@ class GameConsumer(WebsocketConsumer):
         total_cards = sum(len(sublist) for player in players for sublist in player["card"])
         game.numberofplayers = int(total_cards)
         print(total_cards)
-        winner_price = total_cards * game.stake
+        winner_price = total_cards * int(game.stake)
         if winner_price >= 100:
             admin_cut = winner_price * 0.2
             winner_price = winner_price - admin_cut
