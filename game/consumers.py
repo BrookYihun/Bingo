@@ -399,6 +399,7 @@ class GameConsumer(WebsocketConsumer):
 
     def add_player(self, player_id, card_id):
         from game.models import Game
+        from custom_auth.models import User
 
         game = Game.objects.get(id=int(self.game_id))
 
@@ -438,17 +439,37 @@ class GameConsumer(WebsocketConsumer):
             # Initialize players list if it's empty or not properly formatted
             players = [{'user': player_id, 'card': [card_id]}]
 
+        # Get the user and check balance
+        user = User.objects.get(id=player_id)
+        total_cost = game.stake * len(card_id)
+
+        if user.wallet < total_cost:
+            # Insufficient balance, send an error message
+            async_to_sync(self.channel_layer.send)(
+                self.channel_name,
+                {
+                    'type': 'error',
+                    'message': 'Insufficient balance to join the game.'
+                }
+            )
+            return
+        
+        from decimal import Decimal
+        # Deduct the stake amount from the user's wallet
+        user.wallet -= Decimal(total_cost)
+        user.save()
+
         # Save the updated player list and calculate the accurate total number of cards
         game.playerCard = json.dumps(players)
         game.numberofplayers = sum(len(p['card']) if isinstance(p['card'], list) else 1 for p in players)  # Count all cards accurately
         game.save()
 
         async_to_sync(self.channel_layer.send)(
-                self.channel_name,
-                {
-                    'type': 'sucess',
-                    'message': 'Game will start soon'
-                }
+            self.channel_name,
+            {
+                'type': 'sucess',
+                'message': 'Game will start soon'
+            }
         )
 
         # Broadcast the updated player list over the socket
