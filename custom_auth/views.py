@@ -378,3 +378,19 @@ def verify_token(request):
 
     except Exception as e:
         return Response({"error": str(e)}, status=400)
+ 
+@permission_classes([AllowAny])   
+def telegram_login(request):
+    session_key = request.GET.get('session_key')
+    if not session_key:
+        return Response({'error': 'No session key provided'}, status=400)
+
+    try:
+        session = Session.objects.get(session_key=session_key)
+        session_data = session.get_decoded()
+        user_id = session_data.get('_auth_user_id')
+        user = User.objects.get(id=user_id)
+        login(request, user)
+        return Response({'message': 'User authenticated successfully'}, status=200)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)

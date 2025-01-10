@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import RegisterView, LoginView, SendOTPView, VerifyOTPView, get_balance, refresh_session, verify_token
+from .views import RegisterView, LoginView, SendOTPView, VerifyOTPView, get_balance, refresh_session, telegram_login, verify_token
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 urlpatterns = [
@@ -12,4 +12,5 @@ urlpatterns = [
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('refresh-session/', refresh_session, name='refresh_session'),
+    path('telgram-login/', telegram_login, name="telegram_login"),
 ]

@@ -135,6 +135,12 @@ USE_TZ = True
 
 CORS_ALLOW_ALL_ORIGINS = True
 
+SESSION_SAVE_EVERY_REQUEST = False
+
+SESSION_ENGINE = 'django.contrib.sessions.backends.db'  # Use the database for session storage
+SESSION_COOKIE_AGE = 1209600  # 2 weeks (default is 2 weeks)
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False  # Prevent session expiry on browser close
+
 # Static files (CSS, JavaScript, Images)
 STATIC_URL = 'api/static/'  # URL prefix for serving static files
 
