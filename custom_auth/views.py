@@ -1,6 +1,5 @@
 import base64
 import datetime
-from django.http import HttpResponseForbidden
 from django.shortcuts import get_object_or_404
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.decorators import permission_classes
@@ -13,7 +12,6 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .serializer import UserSerializer  # Make sure you have a serializer for User model
 import requests
 from django.conf import settings
-from django.contrib.auth.decorators import login_required
 from django.contrib.sessions.models import Session
 from django.contrib.sessions.backends.db import SessionStore
 from rest_framework.decorators import api_view
@@ -128,7 +126,7 @@ class LoginView(APIView):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-@api_view(['GET'])
+
 @permission_classes([AllowAny])
 class SendOTPView(APIView):
     def post(self, request):
@@ -184,7 +182,7 @@ class SendOTPView(APIView):
         except requests.exceptions.RequestException as e:
             return Response({"error": f"Request failed: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@api_view(['GET'])
+
 @permission_classes([AllowAny])        
 class VerifyOTPView(APIView):
     def post(self, request):
