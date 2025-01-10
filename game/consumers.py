@@ -298,11 +298,6 @@ class GameConsumer(WebsocketConsumer):
             
             if winning_numbers:
                 
-                # Update user’s wallet with the prize
-                acc = User.objects.get(id=user_id)
-                acc.wallet += game.winner_price
-                acc.save()
-                
                 # Bingo achieved
                 result.append({
                     'card_name': card.id,
@@ -327,7 +322,12 @@ class GameConsumer(WebsocketConsumer):
                         'data': result
                     }
                 )
-                self.set_game_state("bingo",True)
+                bingo = self.get_game_state("bingo")
+                if not bingo:
+                    acc = User.objects.get(id=user_id)
+                    acc.wallet += game.winner_price
+                    acc.save()
+                    self.set_game_state("bingo",True)
                 return  # Exit once Bingo is found for any card
 
         # If no Bingo was found for any card
@@ -344,10 +344,7 @@ class GameConsumer(WebsocketConsumer):
 
 
     def has_bingo(self, card, called_numbers):
-        winning_rows = 0
-        winning_diagonals = 0
         winning_columns = 0
-        called_numbers_list = list(called_numbers)
         corner_count = 0
         winning_numbers = []
 
@@ -355,16 +352,13 @@ class GameConsumer(WebsocketConsumer):
         diagonal2 = [card[i][i] for i in range(len(card))]
         diagonal1 = [card[i][len(card) - 1 - i] for i in range(len(card))]
         if all(number in called_numbers for number in diagonal2):
-            winning_diagonals = 2
             winning_numbers.extend([1, 7, 13, 19, 25])
         if all(number in called_numbers for number in diagonal1):
-            winning_diagonals = 1
             winning_numbers.extend([5, 9, 13, 17, 21])
 
         # Check rows
         for row_index, row in enumerate(card):
             if all(number in called_numbers for number in row):
-                winning_rows = row_index + 1
                 winning_numbers.extend([(row_index * 5) + i + 1 for i in range(5)])
 
         # Check columns
@@ -442,10 +436,8 @@ class GameConsumer(WebsocketConsumer):
         from decimal import Decimal
         # Get the user and check balance
         user = User.objects.get(id=player_id)
-        print(card_id)
         card_list = card_id if isinstance(card_id, list) else [card_id]
         total_cost = Decimal(game.stake) * len(card_list) 
-        print(total_cost)
 
         if user.wallet < total_cost:
             # Insufficient balance, send an error message
