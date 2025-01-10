@@ -133,10 +133,21 @@ class GameConsumer(WebsocketConsumer):
 
     def send_random_numbers_periodically(self):
         from game.models import Game
+        import json
+
+        is_running = self.get_game_state("is_running")
         game = Game.objects.get(id=self.game_id)
         game.started_at = timezone.now()
-        game.save()
-        is_running = self.get_game_state("is_running")
+        players = json.loads(game.playerCard)
+        total_cards = sum(len(player["card"]) for player in players)
+        game.numberofplayers = total_cards
+        winner_price = total_cards * game.stake
+        if winner_price >= 100:
+            admin_cut = winner_price * 0.2
+            winner_price = winner_price - admin_cut
+            game.admin_cut = admin_cut
+        game.winner_price = winner_price 
+        game.save()        
 
         async_to_sync(self.channel_layer.group_send)(
             self.room_group_name,
@@ -325,7 +336,7 @@ class GameConsumer(WebsocketConsumer):
                     }
                 )
                 bingo = self.get_game_state("bingo")
-                if not bingo:
+                if bingo == False:
                     acc.wallet += game.winner_price
                     acc.save()
                     self.set_game_state("bingo",True)
