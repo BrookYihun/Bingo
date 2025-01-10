@@ -298,6 +298,8 @@ class GameConsumer(WebsocketConsumer):
             
             if winning_numbers:
                 
+                acc = User.objects.get(id=user_id)
+                
                 # Bingo achieved
                 result.append({
                     'card_name': card.id,
@@ -324,7 +326,6 @@ class GameConsumer(WebsocketConsumer):
                 )
                 bingo = self.get_game_state("bingo")
                 if not bingo:
-                    acc = User.objects.get(id=user_id)
                     acc.wallet += game.winner_price
                     acc.save()
                     self.set_game_state("bingo",True)
