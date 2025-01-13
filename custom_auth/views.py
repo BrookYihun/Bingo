@@ -356,17 +356,3 @@ def verify_token(request):
 
     except Exception as e:
         return Response({"error": str(e)}, status=400)
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def telegram_login(request):
-    user_id = request.GET.get('user_id')  # Replace 'session_key' with 'user_id' for JWT-based flow
-    if not user_id:
-        return Response({'error': 'No user ID provided'}, status=400)
-
-    try:
-        user = get_object_or_404(User, id=user_id)  # Fetch the user by ID
-          # Authenticate the user (if needed for further operations)
-        return Response({'message': 'User authenticated successfully'}, status=200)
-    except Exception as e:
-        return Response({'error': str(e)}, status=500)

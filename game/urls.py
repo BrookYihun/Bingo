@@ -6,6 +6,6 @@ urlpatterns = [
     path('api/start-game/<str:stake>/', start_game, name='start_game'),
     path('api/get-bingo-card/', get_bingo_card, name='get_bingo_card'),
     path('api/get-playing-bingo-card/', get_playing_bingo_card, name='get_playing_bingo_card'),
-    path('api/get-game-stats/<int:game_id>/<int:user_id>/', get_game_stat, name='get_game_stat'),
-    path('api/get-profile/<int:user_id>/',get_user_profile,name="get_profile")
+    path('api/get-game-stats/<int:game_id>//', get_game_stat, name='get_game_stat'),
+    path('api/get-profile/',get_user_profile,name="get_profile")
 ]

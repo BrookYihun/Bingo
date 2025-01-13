@@ -12,5 +12,4 @@ urlpatterns = [
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('refresh-session/', refresh_session, name='refresh_session'),
-    path('telgram-login/', telegram_login, name="telegram_login"),
 ]

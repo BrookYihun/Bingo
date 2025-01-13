@@ -50,7 +50,6 @@ def get_bingo_card(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_playing_bingo_card(request):
-    user_id = request.GET.get('userId')
     game_id = request.GET.get('gameId')
 
     def flatten_card_ids(card_list):
@@ -66,6 +65,7 @@ def get_playing_bingo_card(request):
     try:
         # Retrieve the specified game
         game = Game.objects.get(id=game_id)
+        
 
         # Parse playerCard JSON to find cards for the specified user
         players = json.loads(game.playerCard)
@@ -73,7 +73,7 @@ def get_playing_bingo_card(request):
         # Find and flatten all card IDs for the specified user
         user_cards = []
         for player in players:
-            if player['user'] == int(user_id):
+            if player['user'] == int(request.user.id):
                 # Flatten card IDs for this player
                 user_cards.extend(flatten_card_ids(player['card'] if isinstance(player['card'], list) else [player['card']]))
 
@@ -163,11 +163,11 @@ def start_game(request, stake):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def get_game_stat(request, game_id, user_id):
+def get_game_stat(request, game_id):
     # Retrieve the game instance by ID
     game = get_object_or_404(Game, id=game_id)
     # Retrieve the user instance by ID
-    user = get_object_or_404(User, id=user_id)
+    user = get_object_or_404(User, id=request.user.id)
 
      # Load the existing player card data or initialize as an empty list
     try:
@@ -191,7 +191,7 @@ def get_game_stat(request, game_id, user_id):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def get_user_profile(request,user_id):
+def get_user_profile(request):
     # Fetch the user by ID, or return a 404 if not found
     user = get_object_or_404(User, id=request.user.id)
     
