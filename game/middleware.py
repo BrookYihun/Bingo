@@ -1,8 +1,6 @@
-from django.contrib.auth.models import AnonymousUser
-from rest_framework_simplejwt.authentication import JWTAuthentication
-from channels.db import database_sync_to_async
 
 class JWTAuthMiddleware:
+    from channels.db import database_sync_to_async
     def __init__(self, inner):
         self.inner = inner
 
@@ -11,6 +9,8 @@ class JWTAuthMiddleware:
 
     async def __call__(self, scope, receive, send):
         # Get the token from the query string
+        from django.contrib.auth.models import AnonymousUser
+
         query_string = scope.get("query_string", b"").decode("utf-8")
         token = self.get_token_from_query_string(query_string)
 
@@ -43,6 +43,7 @@ class JWTAuthMiddleware:
         Validates the token using JWTAuthentication.
         """
         try:
+            from rest_framework_simplejwt.authentication import JWTAuthentication
             jwt_auth = JWTAuthentication()
             validated_token = jwt_auth.get_validated_token(token)
             return validated_token
@@ -54,4 +55,5 @@ class JWTAuthMiddleware:
         """
         Fetches the user asynchronously using the validated token.
         """
+        from rest_framework_simplejwt.authentication import JWTAuthentication
         return JWTAuthentication().get_user(validated_token)
