@@ -7,7 +7,6 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from .models import User
-from django.contrib.auth import authenticate, login
 from rest_framework_simplejwt.tokens import RefreshToken
 from .serializer import UserSerializer  # Make sure you have a serializer for User model
 import requests
@@ -15,6 +14,7 @@ from django.conf import settings
 from rest_framework.decorators import api_view
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from rest_framework.exceptions import ValidationError
+from django.contrib.auth import authenticate
 
 
 def get_tokens_for_user(user_id):
@@ -79,9 +79,9 @@ class RegisterView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-# Login view
-@permission_classes([AllowAny])
 class LoginView(APIView):
+    permission_classes = [AllowAny]  # Allow unauthenticated users to access this view
+
     def post(self, request):
         phone_number = request.data.get('phone_number')
         password = request.data.get('password')
@@ -91,17 +91,24 @@ class LoginView(APIView):
         if user:
             if not user.is_verified:
                 return Response(
-                    {"error": "Not Verified User! Verify"},
+                    {"error": "Not Verified User! Please verify your account."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Generate tokens and session ID
-            tokens = get_tokens_for_user(user.id, request)
-            user_data = UserSerializer(user).data  # Serialize user data
+            # Generate JWT tokens for the user
+            refresh = RefreshToken.for_user(user)
+            access_token = str(refresh.access_token)
+            refresh_token = str(refresh)
+
+            # Serialize user data
+            user_data = UserSerializer(user).data
 
             # Combine tokens with user data
             response_data = {
-                "tokens": tokens,
+                "tokens": {
+                    "refresh": refresh_token,
+                    "access": access_token,
+                },
                 "user": user_data,
             }
             return Response(response_data, status=status.HTTP_200_OK)
@@ -110,7 +117,6 @@ class LoginView(APIView):
             {"error": "Invalid phone number or password"},
             status=status.HTTP_400_BAD_REQUEST
         )
-
 
 @permission_classes([AllowAny])
 class SendOTPView(APIView):
