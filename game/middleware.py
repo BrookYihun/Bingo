@@ -1,10 +1,4 @@
-import jwt
-from rest_framework_simplejwt.authentication import JWTAuthentication
-from rest_framework_simplejwt.exceptions import InvalidToken
-from django.contrib.auth.models import AnonymousUser
 from channels.middleware import BaseMiddleware
-from urllib.parse import parse_qs
-
 
 class JWTAuthMiddleware(BaseMiddleware):
     """
@@ -13,6 +7,11 @@ class JWTAuthMiddleware(BaseMiddleware):
 
     async def __call__(self, scope, receive, send):
         # Extract the token from the query string
+        import jwt
+        from rest_framework_simplejwt.authentication import JWTAuthentication
+        from rest_framework_simplejwt.exceptions import InvalidToken
+        from django.contrib.auth.models import AnonymousUser
+        from urllib.parse import parse_qs
         query_string = parse_qs(scope["query_string"].decode("utf-8"))
         token = query_string.get("token", [None])[0]
 
