@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from datetime import timedelta
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -45,7 +46,7 @@ INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
-    'django.contrib.sessions',
+    # 'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
@@ -61,8 +62,8 @@ ASGI_APPLICATION = 'Bingo.asgi.application'
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',  # Removed session middleware
-    'custom_auth.middleware.session_expiry.SessionExpiryMiddleware',
+    # 'django.contrib.sessions.middleware.SessionMiddleware',  # Removed session middleware
+    # 'custom_auth.middleware.session_expiry.SessionExpiryMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.middleware.common.CommonMiddleware',
     # 'django.middleware.csrf.CsrfViewMiddleware',  # Optional if you don't need CSRF protection
@@ -133,13 +134,13 @@ USE_I18N = True
 
 USE_TZ = True
 
-CORS_ALLOW_ALL_ORIGINS = True
-
-SESSION_SAVE_EVERY_REQUEST = False
-
-SESSION_ENGINE = 'django.contrib.sessions.backends.db'  # Use the database for session storage
-SESSION_COOKIE_AGE = 1209600  # 2 weeks (default is 2 weeks)
-SESSION_EXPIRE_AT_BROWSER_CLOSE = False  # Prevent session expiry on browser close
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+}
 
 # Static files (CSS, JavaScript, Images)
 STATIC_URL = 'api/static/'  # URL prefix for serving static files

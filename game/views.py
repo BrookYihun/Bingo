@@ -193,7 +193,7 @@ def get_game_stat(request, game_id, user_id):
 @permission_classes([IsAuthenticated])
 def get_user_profile(request, user_id):
     # Fetch the user by ID, or return a 404 if not found
-    user = get_object_or_404(User, id=user_id)
+    user = request.user
 
     # Prepare the profile data
     profile_data = {
