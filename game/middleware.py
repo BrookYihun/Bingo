@@ -1,29 +1,57 @@
-from channels.middleware import BaseMiddleware
+from django.contrib.auth.models import AnonymousUser
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from channels.db import database_sync_to_async
 
-class JWTAuthMiddleware(BaseMiddleware):
-    """
-    Custom WebSocket middleware for JWT authentication.
-    """
+class JWTAuthMiddleware:
+    def __init__(self, inner):
+        self.inner = inner
+
+    def __call__(self, scope, receive, send):
+        return self.inner(scope, receive, send)
 
     async def __call__(self, scope, receive, send):
-        # Extract the token from the query string
-        import jwt
-        from rest_framework_simplejwt.authentication import JWTAuthentication
-        from rest_framework_simplejwt.exceptions import InvalidToken
-        from django.contrib.auth.models import AnonymousUser
-        from urllib.parse import parse_qs
-        query_string = parse_qs(scope["query_string"].decode("utf-8"))
-        token = query_string.get("token", [None])[0]
+        # Get the token from the query string
+        query_string = scope.get("query_string", b"").decode("utf-8")
+        token = self.get_token_from_query_string(query_string)
 
+        # Authenticate the user
         if token:
-            try:
-                # Decode and authenticate the token
-                validated_token = JWTAuthentication().get_validated_token(token)
-                user = JWTAuthentication().get_user(validated_token)
+            validated_token = self.validate_token(token)
+            if validated_token:
+                user = await self.get_user(validated_token)
                 scope["user"] = user
-            except (InvalidToken, jwt.ExpiredSignatureError):
+            else:
                 scope["user"] = AnonymousUser()
         else:
             scope["user"] = AnonymousUser()
 
-        return await super().__call__(scope, receive, send)
+        return await self.inner(scope, receive, send)
+
+    @staticmethod
+    def get_token_from_query_string(query_string):
+        """
+        Extracts the token from the query string.
+        """
+        for param in query_string.split("&"):
+            key, _, value = param.partition("=")
+            if key == "token":
+                return value
+        return None
+
+    def validate_token(self, token):
+        """
+        Validates the token using JWTAuthentication.
+        """
+        try:
+            jwt_auth = JWTAuthentication()
+            validated_token = jwt_auth.get_validated_token(token)
+            return validated_token
+        except Exception:
+            return None
+
+    @database_sync_to_async
+    def get_user(self, validated_token):
+        """
+        Fetches the user asynchronously using the validated token.
+        """
+        return JWTAuthentication().get_user(validated_token)
