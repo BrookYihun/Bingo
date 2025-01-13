@@ -12,38 +12,23 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .serializer import UserSerializer  # Make sure you have a serializer for User model
 import requests
 from django.conf import settings
-from django.contrib.sessions.models import Session
-from django.contrib.sessions.backends.db import SessionStore
 from rest_framework.decorators import api_view
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from rest_framework.exceptions import ValidationError
 
 
-# Function to generate JWT tokens and session ID
-def get_tokens_for_user(user_id, request=None):
+def get_tokens_for_user(user_id):
+    # Retrieve the user object
+    user = get_object_or_404(User, id=user_id)
+    
     # Generate JWT tokens
-    user = user = get_object_or_404(User, id=user_id)
-    if(user):
-        refresh = RefreshToken.for_user(user)
-
-        # Create a session for the user if it doesn't exist
-        if request and not request.session.session_key:
-            login(request, user)  # Log the user in and create a session
-        else:
-            # Manually create a session if no request is passed
-            session = SessionStore()
-            session['user_id'] = user.id  # Store user-specific data in the session
-            session.create()
-            session_key = session.session_key
-        
-        session_key = request.session.session_key if request else session.session_key
-
-        # Return tokens and session ID
-        return {
-            'refresh': str(refresh),
-            'access': str(refresh.access_token),
-            'sessionid': session_key,
-        }
+    refresh = RefreshToken.for_user(user)
+    
+    # Return tokens
+    return {
+        'refresh': str(refresh),
+        'access': str(refresh.access_token),
+    }
 
 @permission_classes([IsAuthenticated])
 def refresh_session(request):
@@ -335,13 +320,12 @@ def is_token_not_expired(token, expiration_minutes=30):
 
 
 @api_view(["GET"])
-@permission_classes([AllowAny])   
+@permission_classes([AllowAny])
 def verify_token(request):
     try:
         # Retrieve tokens from the request
         access_token = request.GET.get('access', None)
         refresh_token = request.GET.get('refresh', None)
-        session_id = request.GET.get('sessionid', None)
 
         # Validate Access Token
         if access_token:
@@ -361,37 +345,22 @@ def verify_token(request):
         else:
             return Response({"error": "Refresh token missing"}, status=403)
 
-        # Validate Session ID
-        if session_id:
-            try:
-                session = Session.objects.get(session_key=session_id)
-                session_data = session.get_decoded()
-                if 'user_id' not in session_data:
-                    return Response({"error": "Invalid session"}, status=403)
-            except Session.DoesNotExist:
-                return Response({"error": "Invalid or expired session ID"}, status=403)
-        else:
-            return Response({"error": "Session ID missing"}, status=403)
-
         # All tokens are valid
         return Response({"message": "All tokens are valid"}, status=200)
 
     except Exception as e:
         return Response({"error": str(e)}, status=400)
 
-@api_view(['GET']) 
-@permission_classes([AllowAny])   
+@api_view(['GET'])
+@permission_classes([AllowAny])
 def telegram_login(request):
-    session_key = request.GET.get('session_key')
-    if not session_key:
-        return Response({'error': 'No session key provided'}, status=400)
+    user_id = request.GET.get('user_id')  # Replace 'session_key' with 'user_id' for JWT-based flow
+    if not user_id:
+        return Response({'error': 'No user ID provided'}, status=400)
 
     try:
-        session = Session.objects.get(session_key=session_key)
-        session_data = session.get_decoded()
-        user_id = session_data.get('_auth_user_id')
-        user = User.objects.get(id=user_id)
-        login(request, user)
+        user = get_object_or_404(User, id=user_id)  # Fetch the user by ID
+        login(request, user)  # Authenticate the user (if needed for further operations)
         return Response({'message': 'User authenticated successfully'}, status=200)
     except Exception as e:
         return Response({'error': str(e)}, status=500)
