@@ -366,7 +366,7 @@ def telegram_login(request):
 
     try:
         user = get_object_or_404(User, id=user_id)  # Fetch the user by ID
-        login(request, user)  # Authenticate the user (if needed for further operations)
+          # Authenticate the user (if needed for further operations)
         return Response({'message': 'User authenticated successfully'}, status=200)
     except Exception as e:
         return Response({'error': str(e)}, status=500)
