@@ -2,7 +2,6 @@ import jwt
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken
 from django.contrib.auth.models import AnonymousUser
-from django.conf import settings
 from channels.middleware import BaseMiddleware
 from urllib.parse import parse_qs
 
