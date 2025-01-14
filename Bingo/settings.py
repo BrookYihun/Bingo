@@ -62,7 +62,7 @@ ASGI_APPLICATION = 'Bingo.asgi.application'
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    # 'django.contrib.sessions.middleware.SessionMiddleware',  # Removed session middleware
+    'django.contrib.sessions.middleware.SessionMiddleware',  # Removed session middleware
     # 'custom_auth.middleware.session_expiry.SessionExpiryMiddleware',
     # 'game.middleware.JWTAuthMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -70,7 +70,7 @@ MIDDLEWARE = [
     # 'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'corsheaders.middleware.CorsMiddleware',
-    # 'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
 ]
 
 REST_FRAMEWORK = {
