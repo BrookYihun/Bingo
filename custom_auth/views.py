@@ -79,6 +79,47 @@ class RegisterView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+# Registration view
+@permission_classes([AllowAny])
+class RegisterTelegramView(APIView):
+    def post(self, request):
+        phone_number = request.data.get('phone_number')
+        password = request.data.get('password')
+        name = request.data.get('name')
+
+        # Validate the input
+        if not phone_number or not password or not name:
+            return Response(
+                {"error": "Phone number, name, and password are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Check if the phone number already exists
+        if User.objects.filter(phone_number=phone_number).exists():
+            return Response(
+                {"error": "Phone number already in use"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Create a new user
+        user = User.objects.create_user(phone_number=phone_number, password=password, name=name)
+
+        user.verify_otp()
+                    
+        refresh = RefreshToken.for_user(user)
+        access_token = str(refresh.access_token)
+        refresh_token = str(refresh)
+        user_data = UserSerializer(user).data
+        
+        response_data = {
+            "tokens": {
+                "refresh": refresh_token,
+                "access": access_token,
+            },
+            "user": user_data,
+        }
+        return Response(response_data, status=status.HTTP_200_OK)
+
 class LoginView(APIView):
     permission_classes = [AllowAny]  # Allow unauthenticated users to access this view
 

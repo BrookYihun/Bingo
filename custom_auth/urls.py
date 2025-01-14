@@ -1,9 +1,10 @@
 from django.urls import path
-from .views import RegisterView, LoginView, SendOTPView, VerifyOTPView, get_balance, refresh_session, verify_token
+from .views import RegisterTelegramView, RegisterView, LoginView, SendOTPView, VerifyOTPView, get_balance, refresh_session, verify_token
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 urlpatterns = [
     path('register/', RegisterView.as_view(), name='register'),
+    path('register-telegram/', RegisterTelegramView.as_view(), name='register_telegram'),
     path('login/', LoginView.as_view(), name='login'),
     path("send-otp/", SendOTPView.as_view(), name="send-otp"),
     path("verify-otp/", VerifyOTPView.as_view(), name="verify-otp"),
