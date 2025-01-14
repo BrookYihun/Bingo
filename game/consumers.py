@@ -35,6 +35,7 @@ class GameConsumer(WebsocketConsumer):
         self.redis_client.hset(redis_key, key, json.dumps(value))
 
     def connect(self):
+        print("connecting")
         self.game_id = self.scope['url_route']['kwargs']['game_id']
         self.room_group_name = f'game_{self.game_id}'
         
@@ -126,6 +127,7 @@ class GameConsumer(WebsocketConsumer):
                 # self.block(int(data['userId']))
 
         if data['type'] == 'select_number':
+            print("fghjkfghjk")
             self.add_player(data['player_id'], data['card_id'])
 
         if data['type'] == 'remove_number':
