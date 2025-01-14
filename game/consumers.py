@@ -38,7 +38,7 @@ class GameConsumer(WebsocketConsumer):
         print("connecting")
         self.game_id = self.scope['url_route']['kwargs']['game_id']
         self.room_group_name = f'game_{self.game_id}'
-        
+        print("connecting")
         from game.models import Game
         try:
             game = Game.objects.get(id=int(self.game_id))
@@ -70,8 +70,10 @@ class GameConsumer(WebsocketConsumer):
                 self.room_group_name,
                 self.channel_name
             )
+            print("connecting")
         except Game.DoesNotExist:
             # If the game does not exist, close the connection
+            print("error")
             self.close()
 
     def disconnect(self, close_code):
