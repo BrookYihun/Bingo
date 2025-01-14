@@ -64,8 +64,8 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     # 'django.contrib.sessions.middleware.SessionMiddleware',  # Removed session middleware
     # 'custom_auth.middleware.session_expiry.SessionExpiryMiddleware',
-    # 'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'game.middleware.JWTAuthMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    # 'game.middleware.JWTAuthMiddleware',
     'django.middleware.common.CommonMiddleware',
     # 'django.middleware.csrf.CsrfViewMiddleware',  # Optional if you don't need CSRF protection
     # 'django.contrib.messages.middleware.MessageMiddleware',
