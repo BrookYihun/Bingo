@@ -4,9 +4,6 @@ class JWTAuthMiddleware:
     def __init__(self, inner):
         self.inner = inner
 
-    def __call__(self, scope, receive, send):
-        return self.inner(scope, receive, send)
-
     async def __call__(self, scope, receive, send):
         # Get the token from the query string
         from django.contrib.auth.models import AnonymousUser
