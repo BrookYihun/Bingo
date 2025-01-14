@@ -8,6 +8,8 @@ class CustomAdminSite(AdminSite):
         Check if the user has permissions to access the admin site.
         Uses JWT for authentication instead of session-based middleware.
         """
+        if not request.user.is_authenticated:
+            return False  # Triggers redirection to the login page
         try:
             auth = JWTAuthentication()
             validated_user, _ = auth.authenticate(request)
@@ -16,7 +18,9 @@ class CustomAdminSite(AdminSite):
                 return True
         except Exception:
             pass
-        raise PermissionDenied("Authentication required to access the admin interface.")
+        
+        return False
+    
 
 # Instantiate the custom admin site
 custom_admin_site = CustomAdminSite(name="custom_admin")
