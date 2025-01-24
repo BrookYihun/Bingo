@@ -28,7 +28,7 @@ def generate_bingo_card():
 class Command(BaseCommand):
     def handle(self, *args, **options):
         used_cards = set()
-        total_cards = 200
+        total_cards = 500
 
         # Generate unique bingo cards
         while len(used_cards) < total_cards:
