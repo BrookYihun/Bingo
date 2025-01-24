@@ -57,10 +57,3 @@ class User(AbstractUser):
     def __str__(self):
         return self.name
 
-# Cashier model with its own specific fields
-class Cashier(AbstractUser):
-    location = models.CharField(max_length=15, unique=True)
-
-    def __str__(self):
-        return f"Cashier: {self.name}"
-

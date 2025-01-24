@@ -100,13 +100,18 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'Bingo.wsgi.application'
 
-# Database
+
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'dallol_bingo_online',
+        'USER': 'dallol',
+        'PASSWORD': 'Byihun@123',
+        'HOST': '127.0.0.1',  # Typically localhost for shared hosting
+        'PORT': '5432',           # Leave empty if default port 5432 is used
     }
 }
+
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
