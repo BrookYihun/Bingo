@@ -129,7 +129,7 @@ class GameConsumer(WebsocketConsumer):
             self.add_player(data['player_id'], data['card_id'])
 
         if data['type'] == 'remove_number':
-            self.remove_player(data['player_id'], data['card_id'])
+            self.remove_player(data['player_id'])
 
     def send_random_numbers_periodically(self):
         from game.models import Game
@@ -159,7 +159,7 @@ class GameConsumer(WebsocketConsumer):
         )
 
         # Wait 65 seconds before switching state
-        time.sleep(65)
+        time.sleep(30)
         game.played = 'Playing'
         game.save()
 
@@ -170,6 +170,29 @@ class GameConsumer(WebsocketConsumer):
                 'message': 'game is now playing' 
             }
         )
+
+        from decimal import Decimal
+        from custom_auth.models import User
+
+        
+        # Deduct stake from each player's wallet
+        stake_amount = Decimal(game.stake)
+        player_cards = game.playerCard  # This is assumed to be {user_id: [card1, card2, ...], ...}
+
+        for user, cards in player_cards.items():
+            try:
+                user = User.objects.get(id=user)
+                num_cards = len(cards)
+                total_deduction = stake_amount * num_cards
+
+                if user.wallet >= total_deduction:
+                    user.wallet -= total_deduction
+                    user.save()
+                else:
+                    # You may want to handle users with insufficient balance (log, remove from game, etc.)
+                    print(f"User {user} has insufficient balance.")
+            except User.DoesNotExist:
+                print(f"User with id {user} not found.")
 
         # Send each number only once
         for num in self.game_random_numbers:
@@ -464,8 +487,8 @@ class GameConsumer(WebsocketConsumer):
             return
         
         # Deduct the stake amount from the user's wallet
-        user.wallet -= Decimal(total_cost)
-        user.save()
+        # user.wallet -= Decimal(total_cost)
+        # user.save()
 
         # Save the updated player list and calculate the accurate total number of cards
         game.playerCard = json.dumps(players)
@@ -489,13 +512,13 @@ class GameConsumer(WebsocketConsumer):
             }
         )
 
-    def remove_player(self, player_id, card_id):
+    def remove_player(self, player_id):
         from game.models import Game
         game = Game.objects.get(id=int(self.game_id))
 
         # Update the player list in the database
         players = json.loads(game.playerCard)
-        updated_list = [player for player in players if player['user'] != player_id or player['card'] != card_id]
+        updated_list = [player for player in players if player['user'] != player_id]
         game.playerCard = json.dumps(updated_list)
         game.numberofplayers = len(updated_list)
         game.save()
