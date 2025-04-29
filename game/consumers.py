@@ -174,25 +174,37 @@ class GameConsumer(WebsocketConsumer):
         from decimal import Decimal
         from custom_auth.models import User
 
-        
-        # Deduct stake from each player's wallet
         stake_amount = Decimal(game.stake)
-        player_cards = game.playerCard  # This is assumed to be {user_id: [card1, card2, ...], ...}
 
-        for user, cards in player_cards.items():
+        # Convert string to Python object
+        player_cards_raw = game.playerCard
+        if isinstance(player_cards_raw, str):
+            player_cards = json.loads(player_cards_raw)
+        else:
+            player_cards = player_cards_raw
+
+        # Now iterate over the list of players
+        for entry in player_cards:
             try:
-                user = User.objects.get(id=user)
+                user_id = entry["user"]
+                cards = entry["card"]
                 num_cards = len(cards)
                 total_deduction = stake_amount * num_cards
+
+                user = User.objects.get(id=user_id)
 
                 if user.wallet >= total_deduction:
                     user.wallet -= total_deduction
                     user.save()
                 else:
-                    # You may want to handle users with insufficient balance (log, remove from game, etc.)
                     print(f"User {user} has insufficient balance.")
+                    # Optionally remove them from game or notify them here
+
             except User.DoesNotExist:
-                print(f"User with id {user} not found.")
+                print(f"User with id {user_id} not found.")
+            except Exception as e:
+                print(f"Error processing deduction: {e}")
+
 
         # Send each number only once
         for num in self.game_random_numbers:
