@@ -187,8 +187,10 @@ class GameConsumer(WebsocketConsumer):
         for entry in player_cards:
             try:
                 user_id = entry["user"]
-                cards = entry["card"]
-                num_cards = len(cards)
+                cards = entry["card"]  # cards = [[57, 69]]
+                # Flatten the nested list to count total card IDs
+                flattened_cards = [card_id for sublist in cards for card_id in sublist]
+                num_cards = len(flattened_cards) 
                 total_deduction = stake_amount * num_cards
 
                 user = User.objects.get(id=user_id)
@@ -197,7 +199,7 @@ class GameConsumer(WebsocketConsumer):
                     user.wallet -= total_deduction
                     user.save()
                 else:
-                    print(f"User {user} has insufficient balance.")
+                    self.remove_player(self,user_id)
                     # Optionally remove them from game or notify them here
 
             except User.DoesNotExist:
@@ -543,7 +545,7 @@ class GameConsumer(WebsocketConsumer):
                 'player_list': updated_list
             }
         )
-
+        
     def update_player_list(self, event):
         player_list = event['player_list']
         # Send the updated player list to WebSocket clients
