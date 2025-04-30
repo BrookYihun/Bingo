@@ -54,6 +54,12 @@ class GameConsumer(WebsocketConsumer):
                     'called_numbers': self.called_numbers
                 }))
             
+            if game.played == 'Started':
+                self.send(text_data=json.dumps({
+                    'type': 'timer_message',
+                    'message': str(game.started_at)
+                }))
+            
             self.game_random_numbers = json.loads(game.random_numbers)
             
             bingo = self.get_game_state("bingo")
@@ -89,10 +95,6 @@ class GameConsumer(WebsocketConsumer):
             game = Game.objects.get(id=int(self.game_id))
 
             if game.played == "Started" and game.numberofplayers > 1:
-                self.send(text_data=json.dumps({
-                    'type': 'timer_message',
-                    'message': str(game.started_at)
-                }))
 
                 async_to_sync(self.channel_layer.group_send)(
                     self.room_group_name,
@@ -107,6 +109,14 @@ class GameConsumer(WebsocketConsumer):
 
                     thread = threading.Thread(target=self.send_random_numbers_periodically)
                     thread.start()
+
+                    async_to_sync(self.channel_layer.group_send)(
+                    self.room_group_name,
+                        {
+                            'type': 'timer_message',
+                            'message': str(game.started_at)
+                        }
+                    )
 
 
         if data['type'] == 'bingo':
