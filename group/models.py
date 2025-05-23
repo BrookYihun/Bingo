@@ -6,15 +6,11 @@ class Group(models.Model):
     description = models.TextField()
     
     is_recurring = models.BooleanField(default=False)
-    recurring_unit = models.CharField(
-        max_length=10,
-        choices=[('minutes', 'Minutes'), ('hours', 'Hours'), ('days', 'Days'), ('months', 'Months')],
-        blank=True,
-        null=True,
-        help_text="Interval between recurring games if applicable"
+    recurrence_interval_seconds = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="Recurrence interval stored in seconds"
     )
-    recurrence_interval = models.PositiveIntegerField(null=True, blank=True, help_text="Number of units between games")
-    
+
     stake = models.DecimalField(max_digits=10, decimal_places=2)
     is_public = models.BooleanField(default=True)  # public/private group
 
