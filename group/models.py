@@ -4,7 +4,7 @@ from django.utils.timezone import now
 
 class Group(models.Model):
     name = models.CharField(max_length=100)
-    description = models.TextField()
+    description = models.TextField(default='', blank=True)
     
     is_recurring = models.BooleanField(default=False)
     recurrence_interval_seconds = models.PositiveIntegerField(
