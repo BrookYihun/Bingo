@@ -32,7 +32,7 @@ class Group(models.Model):
         blank=True
     )
 
-    created_at = models.DateTimeField(auto_now_add=True,default=now)
+    created_at = models.DateTimeField(default=now)
 
     def __str__(self):
         return self.name
