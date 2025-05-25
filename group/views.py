@@ -3,7 +3,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from .models import Group
-from .serializers import GroupSerializer
+from .serializer import GroupSerializer
 from django.utils.crypto import get_random_string
 from django.contrib.auth import get_user_model
 
