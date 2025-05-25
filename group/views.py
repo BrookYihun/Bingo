@@ -85,7 +85,7 @@ def subscribe_to_group(request):
 
     try:
         group = Group.objects.get(id=group_id)
-        group.members.add(request.user)
+        group.subscribers.add(request.user)
         return Response({"detail": "Subscribed to group"}, status=status.HTTP_200_OK)
     except Group.DoesNotExist:
         return Response({"detail": "Group not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -99,7 +99,7 @@ def unsubscribe_from_group(request):
 
     try:
         group = Group.objects.get(id=group_id)
-        group.members.remove(request.user)
+        group.subscribers.remove(request.user)
         return Response({"detail": "Unsubscribed from group"}, status=status.HTTP_200_OK)
     except Group.DoesNotExist:
         return Response({"detail": "Group not found"}, status=status.HTTP_404_NOT_FOUND)
