@@ -1,7 +1,6 @@
-from datetime import timezone
+from django.utils import timezone
 from django.db import models
 from django.conf import settings
-from django.utils.timezone import now
 
 class Group(models.Model):
     name = models.CharField(max_length=100)
@@ -33,7 +32,7 @@ class Group(models.Model):
         blank=True
     )
 
-    created_at = models.DateTimeField(default=now)
+    created_at = models.DateTimeField(default=timezone.now)
 
     def __str__(self):
         return self.name
