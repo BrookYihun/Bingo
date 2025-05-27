@@ -4,6 +4,7 @@ from .views import GroupCreateUpdateView, my_groups, private_groups, public_grou
 
 urlpatterns = [
     path('group/', GroupCreateUpdateView.as_view(), name='group-create'),
+    path('group/<int:group_id>/', GroupCreateUpdateView.as_view(), name='group-detail'),
     path('my/',my_groups, name='my-groups'),
     path('public/', public_groups, name='public-groups'),
     path('private/', private_groups, name='private-groups'),

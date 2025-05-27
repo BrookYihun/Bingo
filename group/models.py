@@ -1,3 +1,4 @@
+from datetime import timezone
 from django.db import models
 from django.conf import settings
 from django.utils.timezone import now
@@ -36,3 +37,23 @@ class Group(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class GroupGame(models.Model):
+    group = models.ForeignKey(
+        'Group',
+        on_delete=models.SET_NULL,  # Or models.PROTECT, depending on your logic
+        null=True,
+        blank=True,
+        related_name='games'
+    )
+    game = models.OneToOneField(
+        'game.Game',
+        on_delete=models.CASCADE,  # If game is deleted, remove the groupgame record
+        related_name='group_game'
+    )
+    start_time = models.DateTimeField(default=timezone.now)
+
+    def __str__(self):
+        return f"{self.game} in {self.group.name if self.group else 'No Group'}"
+

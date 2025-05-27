@@ -53,6 +53,37 @@ class GroupCreateUpdateView(APIView):
             return Response(GroupSerializer(updated_group).data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    def get(self, request, group_id=None):
+        user = request.user
+        if not user.is_authenticated:
+            return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if not group_id:
+            return Response({'error': 'Group ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        group = get_object_or_404(Group, id=group_id)
+
+        if group.owner != user and user not in group.subscribers.all():
+            return Response({'error': 'Access denied'}, status=status.HTTP_403_FORBIDDEN)
+
+        return Response(GroupSerializer(group).data, status=status.HTTP_200_OK)
+
+    def delete(self, request, group_id=None):
+        user = request.user
+        if not user.is_authenticated:
+            return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if not group_id:
+            return Response({'error': 'Group ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        group = get_object_or_404(Group, id=group_id)
+
+        if group.owner != user:
+            return Response({'error': 'Only the group owner can delete this group'}, status=status.HTTP_403_FORBIDDEN)
+
+        group.delete()
+        return Response({'message': 'Group deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def my_groups(request):
