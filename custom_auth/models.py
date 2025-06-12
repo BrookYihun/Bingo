@@ -30,7 +30,7 @@ class CustomUserManager(BaseUserManager):
 class AbstractUser(AbstractBaseUser,PermissionsMixin):
     phone_number = models.CharField(max_length=15, unique=True)
     name = models.CharField(max_length=100)
-    telgram_id = models.CharField(max_length=100, null=True)
+    telegram_id = models.CharField(max_length=100, null=True)
     date_joined = models.DateTimeField(auto_now_add=True)
     is_verified = models.BooleanField(default=False)
     
