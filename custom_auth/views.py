@@ -1,5 +1,8 @@
 import base64
 import datetime
+import json
+import random
+import string
 from django.shortcuts import get_object_or_404
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.decorators import permission_classes
@@ -15,6 +18,10 @@ from rest_framework.decorators import api_view
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from rest_framework.exceptions import ValidationError
 from django.contrib.auth import authenticate
+import hmac
+import hashlib
+from urllib.parse import parse_qs, unquote_plus
+from django.conf import settings
 
 
 def get_tokens_for_user(user_id):
@@ -80,45 +87,54 @@ class RegisterView(APIView):
             )
 
 # Registration view
+def generate_random_password(length=8):
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
+
+
 @permission_classes([AllowAny])
 class RegisterTelegramView(APIView):
     def post(self, request):
         phone_number = request.data.get('phone_number')
-        password = request.data.get('password')
+        chat_id = request.data.get('chat_id')
         name = request.data.get('name')
 
-        # Validate the input
-        if not phone_number or not password or not name:
+        if not phone_number or not chat_id or not name:
             return Response(
-                {"error": "Phone number, name, and password are required"},
+                {"error": "Phone number, name, and chat_id are required"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Check if the phone number already exists
-        if User.objects.filter(phone_number=phone_number).exists():
-            return Response(
-                {"error": "Phone number already in use"},
-                status=status.HTTP_400_BAD_REQUEST
+        try:
+            user = User.objects.get(phone_number=phone_number)
+            # Phone number exists – update chat_id
+            user.chat_id = chat_id
+            user.save()
+        except User.DoesNotExist:
+            # Phone number doesn't exist – create new user with random password
+            random_password = generate_random_password()
+            user = User.objects.create_user(
+                phone_number=phone_number,
+                name=name,
+                password=random_password,
+                chat_id=chat_id,
             )
-
-        # Create a new user
-        user = User.objects.create_user(phone_number=phone_number, password=password, name=name)
 
         user.verify_otp()
-                    
+        
+        # Generate JWT tokens
         refresh = RefreshToken.for_user(user)
         access_token = str(refresh.access_token)
         refresh_token = str(refresh)
+
         user_data = UserSerializer(user).data
-        
-        response_data = {
+
+        return Response({
             "tokens": {
                 "refresh": refresh_token,
                 "access": access_token,
             },
             "user": user_data,
-        }
-        return Response(response_data, status=status.HTTP_200_OK)
+        }, status=status.HTTP_200_OK)
 
 class LoginView(APIView):
     permission_classes = [AllowAny]  # Allow unauthenticated users to access this view
@@ -397,3 +413,80 @@ def verify_token(request):
 
     except Exception as e:
         return Response({"error": str(e)}, status=400)
+
+
+def parse_init_data(init_data: str) -> dict:
+    params = parse_qs(init_data, keep_blank_values=True)
+    return {k: v[0] for k, v in params.items()}
+
+
+def bytes_to_hex(b: bytes) -> str:
+    return b.hex()
+
+
+def hmac_sha256(key: str, data: str) -> bytes:
+    return hmac.new(key.encode('utf-8'), data.encode('utf-8'), hashlib.sha256).digest()
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def verify_init_data(request):
+    init_data = request.data.get("initData")
+    bot_token = settings.TELEGRAM_BOT_TOKEN
+
+    if not init_data:
+        return Response({"error": "initData is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        params = parse_init_data(init_data)
+        print(params)
+        received_hash = params.pop("hash", None)
+
+        if not received_hash:
+            return Response({"error": "Hash not found in initData"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Build data_check_string
+        keys = sorted(params.keys())
+        data_check_string = "\n".join(f"{key}={params[key]}" for key in keys)
+
+        # Generate secret key and calculate hash
+        secret_key = hmac_sha256("WebAppData", bot_token)
+        calculated_hash = bytes_to_hex(
+            hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).digest()
+        )
+
+        if calculated_hash != received_hash:
+            return Response({"verified": False}, status=status.HTTP_403_FORBIDDEN)
+
+        # Extract Telegram user data from `initData`
+        user_json = params.get("user")
+        if not user_json:
+            return Response({"error": "user field not found in initData"}, status=status.HTTP_400_BAD_REQUEST)
+
+        user_data = json.loads(user_json)
+        telegram_id = user_data.get("id")
+
+        # Lookup existing user
+        try:
+            user = User.objects.get(telegram_id=telegram_id)
+        except User.DoesNotExist:
+            return Response({"error": "User with this telegram_id not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Generate tokens
+        refresh = RefreshToken.for_user(user)
+        access_token = str(refresh.access_token)
+        refresh_token = str(refresh)
+
+        # Serialize user
+        serialized_user = UserSerializer(user).data
+
+        return Response({
+            "tokens": {
+                "access": access_token,
+                "refresh": refresh_token
+            },
+            "user": serialized_user
+        })
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

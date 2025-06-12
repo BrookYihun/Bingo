@@ -12,7 +12,7 @@ class Group(models.Model):
         help_text="Recurrence interval stored in seconds"
     )
 
-    stake = models.DecimalField(max_digits=10, decimal_places=2)
+    stake = models.DecimalField(max_digits=10, decimal_places=2,default=10)
     is_public = models.BooleanField(default=True)  # public/private group
 
     is_scheduled = models.BooleanField(default=False)  # whether to start at scheduled time
