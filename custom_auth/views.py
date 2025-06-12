@@ -423,9 +423,8 @@ def parse_init_data(init_data: str) -> dict:
 def bytes_to_hex(b: bytes) -> str:
     return b.hex()
 
-
-def hmac_sha256(key: str, data: str) -> bytes:
-    return hmac.new(key.encode('utf-8'), data.encode('utf-8'), hashlib.sha256).digest()
+def hmac_sha256(key: bytes, data: str) -> bytes:
+    return hmac.new(key, data.encode('utf-8'), hashlib.sha256).digest()
 
 
 @api_view(["POST"])
@@ -450,10 +449,13 @@ def verify_init_data(request):
         data_check_string = "\n".join(f"{key}={params[key]}" for key in keys)
 
         # Generate secret key and calculate hash
-        secret_key = hmac_sha256("WebAppData", bot_token)
+        secret_key = hmac_sha256(b"WebAppData", bot_token)
         calculated_hash = bytes_to_hex(
             hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).digest()
         )
+        
+        print("Calculated hash:", calculated_hash)
+        print("Received hash:", received_hash)
 
         if calculated_hash != received_hash:
             return Response({"verified": False}, status=status.HTTP_403_FORBIDDEN)
