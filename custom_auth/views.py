@@ -462,27 +462,7 @@ def verify_init_data(request):
 
         # Extract Telegram user data from `initData`
         user_json = params.get("user")
-        print("User JSON:", user_json)
-        try:
-            user_data = json.loads(user_json)
-        except Exception as e:
-            print("Error decoding user JSON:", str(e))
-            return Response({"error": "Invalid user JSON", "detail": str(e)}, status=400)
-
-        telegram_id = user_data.get("id")
-        print("Telegram ID:", telegram_id)
-
-        try:
-            user = User.objects.get(telegram_id=telegram_id)
-        except User.DoesNotExist:
-            print("User with telegram_id not found.")
-            return Response({"error": "User with this telegram_id not found"}, status=status.HTTP_404_NOT_FOUND)
-        except Exception as e:
-            print("Unexpected error fetching user:", str(e))
-            return Response({"error": "Unexpected DB error", "detail": str(e)}, status=500)
-        if not user_json:
-            return Response({"error": "user field not found in initData"}, status=status.HTTP_400_BAD_REQUEST)
-
+        
         user_data = json.loads(user_json)
         telegram_id = user_data.get("id")
 
