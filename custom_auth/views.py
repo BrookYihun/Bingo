@@ -438,7 +438,6 @@ def verify_init_data(request):
 
     try:
         params = parse_init_data(init_data)
-        print(params)
         received_hash = params.pop("hash", None)
 
         if not received_hash:
