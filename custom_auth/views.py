@@ -454,9 +454,6 @@ def verify_init_data(request):
             hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).digest()
         )
         
-        print("Calculated hash:", calculated_hash)
-        print("Received hash:", received_hash)
-
         if calculated_hash != received_hash:
             return Response({"verified": False}, status=status.HTTP_403_FORBIDDEN)
 
