@@ -177,3 +177,15 @@ OTP_MESSAGE_PREFIX = "Wellcome to Dallol Games"
 OTP_MESSAGE_POSTFIX = "" 
 
 TELEGRAM_BOT_TOKEN = "8190265954:AAGaBEvGhhF6M5mMIdwY1Kg8yIHGjH4gZx8"
+
+# settings.py
+LOGGING = {
+    'version': 1,
+    ...
+    'loggers': {
+        'django.request': {
+            'handlers': ['console'],
+            'level': 'DEBUG',  # <- Change to DEBUG
+        },
+    },
+}
