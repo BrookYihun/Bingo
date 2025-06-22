@@ -107,7 +107,7 @@ class RegisterTelegramView(APIView):
         try:
             user = User.objects.get(phone_number=phone_number)
             # Phone number exists – update chat_id
-            user.chat_id = chat_id
+            user.telegram_id = chat_id
             user.save()
         except User.DoesNotExist:
             # Phone number doesn't exist – create new user with random password
