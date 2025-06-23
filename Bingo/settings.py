@@ -178,3 +178,27 @@ OTP_MESSAGE_POSTFIX = ""
 
 TELEGRAM_BOT_TOKEN = "8171709428:AAHKPhLBR8EC9vxrL5mWFaB3QKQedeXAm3E"
 
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+        },
+        'channels': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+        },
+        'django.request': {
+            'handlers': ['console'],
+            'level': 'ERROR',
+            'propagate': True,
+        },
+    },
+}
