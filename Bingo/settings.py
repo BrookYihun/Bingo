@@ -180,7 +180,7 @@ TELEGRAM_BOT_TOKEN = "8171709428:AAHKPhLBR8EC9vxrL5mWFaB3QKQedeXAm3E"
 
 LOGGING = {
     'version': 1,
-    'disable_existing_loggers': False,
+    'disable_existing_loggers': False,  # Keep True if you want full control
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
@@ -189,16 +189,22 @@ LOGGING = {
     'loggers': {
         'django': {
             'handlers': ['console'],
-            'level': 'DEBUG',
+            'level': 'ERROR',  # Only show ERROR and above
+            'propagate': True,
         },
         'channels': {
             'handlers': ['console'],
-            'level': 'DEBUG',
+            'level': 'ERROR',  # Only errors from Django Channels
+            'propagate': True,
         },
         'django.request': {
             'handlers': ['console'],
-            'level': 'ERROR',
-            'propagate': True,
+            'level': 'ERROR',  # Errors from HTTP handling
+            'propagate': False,
+        },
+        'django.db.backends': {
+            'handlers': ['console'],
+            'level': 'ERROR',  # Hide SQL queries unless they error
         },
     },
 }
