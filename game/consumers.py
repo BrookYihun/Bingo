@@ -94,7 +94,7 @@ class GameConsumer(WebsocketConsumer):
             from game.models import Game
             game = Game.objects.get(id=int(self.game_id))
 
-            if game.played == "Started" and game.numberofplayers > 1:
+            if game.played == "Started":
                 self.send(text_data=json.dumps({
                     'type': 'timer_message',
                     'message': str(game.started_at)
