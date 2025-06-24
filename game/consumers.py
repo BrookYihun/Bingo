@@ -532,7 +532,7 @@ class GameConsumer(WebsocketConsumer):
         async_to_sync(self.channel_layer.send)(
             self.channel_name,
             {
-                'type': 'success',
+                'type': 'sucess',
                 'message': 'Game will start soon'
             }
         )
