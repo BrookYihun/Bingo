@@ -95,6 +95,8 @@ class GameConsumer(WebsocketConsumer):
             game = Game.objects.get(id=int(self.game_id))
 
             if game.played == "Started":
+                game.started_at = timezone.now()
+                game.save()
                 self.send(text_data=json.dumps({
                     'type': 'timer_message',
                     'message': str(game.started_at)
@@ -110,7 +112,7 @@ class GameConsumer(WebsocketConsumer):
 
                 if not is_running:
                     self.set_game_state("is_running",True)
-                    print("Game is running now")
+
                     thread = threading.Thread(target=self.send_random_numbers_periodically)
                     thread.start()
 
@@ -131,7 +133,6 @@ class GameConsumer(WebsocketConsumer):
                 # self.block(int(data['userId']))
 
         if data['type'] == 'select_number':
-            print("fghjkfghjk")
             self.add_player(data['player_id'], data['card_id'])
 
         if data['type'] == 'remove_number':
@@ -142,7 +143,6 @@ class GameConsumer(WebsocketConsumer):
         import json
 
         is_running = self.get_game_state("is_running")
-        print("is running", is_running)
         game = Game.objects.get(id=self.game_id)
         game.started_at = timezone.now()
         players = json.loads(game.playerCard)
@@ -404,6 +404,9 @@ class GameConsumer(WebsocketConsumer):
         winning_columns = 0
         corner_count = 0
         winning_numbers = []
+
+        print("Checking card for Bingo:", card)
+        print("Called numbers:", called_numbers)
 
         # Check diagonals
         diagonal2 = [card[i][i] for i in range(len(card))]

@@ -131,21 +131,24 @@ def get_active_games(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def start_game(request, stake):
-    # Check if there is an active game with the chosen stake
+    # Get the most recent game with status "Started" and matching stake
     active_game = Game.objects.filter(stake=stake, played='Started').order_by('-created_at').first()
-    
+
     if active_game:
-        # Return the ID of the last active game if found
-        return JsonResponse({
-            'status': 'success',
-            'game_id': active_game.id,
-            'message': f'Active game found for stake {stake}'
-        })
-    
-    # If no active game is found, create a new game
+        # Check if the game was created within the last 20 seconds
+        time_diff = timezone.now() - active_game.started_at
+        if time_diff.total_seconds() <= 20:
+            return JsonResponse({
+                'status': 'success',
+                'game_id': active_game.id,
+                'message': f'Active game found for stake {stake}'
+            })
+        # Otherwise, we continue to create a new game below
+
+    # If no active game found, or if it’s too old, create a new one
     new_game = Game.objects.create(
         stake=stake,
-        numberofplayers=0,  # Adjust based on your initial setup
+        numberofplayers=0,
         played='Started',
         created_at=timezone.now(),
         started_at=timezone.now(),
@@ -154,7 +157,7 @@ def start_game(request, stake):
         winner_price=0,
         admin_cut=0
     )
-    
+
     return JsonResponse({
         'status': 'success',
         'game_id': new_game.id,
