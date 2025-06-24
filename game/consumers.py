@@ -110,7 +110,7 @@ class GameConsumer(WebsocketConsumer):
 
                 if not is_running:
                     self.set_game_state("is_running",True)
-
+                    print("Game is running now")
                     thread = threading.Thread(target=self.send_random_numbers_periodically)
                     thread.start()
 
@@ -142,6 +142,7 @@ class GameConsumer(WebsocketConsumer):
         import json
 
         is_running = self.get_game_state("is_running")
+        print("is running", is_running)
         game = Game.objects.get(id=self.game_id)
         game.started_at = timezone.now()
         players = json.loads(game.playerCard)
