@@ -114,14 +114,23 @@ def generate_random_numbers():
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_active_games(request):
-    # Query to count active games by stake where the game status is 'Started'
+    now = timezone.now()
+    
+    # Step 1: Get all games with 'Started' or 'Created' status
+    active_games_qs = Game.objects.filter(played__in=['Started', 'Created'])
+
+    # Step 2: Check if any 'Started' games are older than 500 seconds and update them
+    expired_games = active_games_qs.filter(played='Started', started_at__lt=now - timezone.timedelta(seconds=500))
+    expired_games.update(played='closed')
+
+    # Step 3: Refresh the queryset to only include valid active games after update
     active_games = (
-        Game.objects.filter(played='Started')  # Filter by games that are started
-        .values('stake')                       # Group by stake
-        .annotate(count=Count('id'))           # Count the number of games in each stake group
+        Game.objects.filter(played__in=['Started', 'Created'])  # Re-fetch active games
+        .values('stake')                                        # Group by stake
+        .annotate(count=Count('id'))                            # Count the number in each stake group
     )
 
-    # Convert the result into a dictionary where the keys are stake values and the values are the counts
+    # Convert to dictionary: { stake: count }
     result = {game['stake']: game['count'] for game in active_games}
 
     return JsonResponse({
@@ -131,25 +140,32 @@ def get_active_games(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def start_game(request, stake):
-    # Get the most recent game with status "Started" and matching stake
-    active_game = Game.objects.filter(stake=stake, played='Started').order_by('-created_at').first()
+    # Get the most recent game for this stake with either 'Started' or 'Created' status
+    recent_game = Game.objects.filter(stake=stake, played__in=['Started', 'Created']).order_by('-created_at').first()
 
-    if active_game:
-        # Check if the game was created within the last 20 seconds
-        time_diff = timezone.now() - active_game.started_at
-        if time_diff.total_seconds() <= 20:
+    if recent_game:
+        if recent_game.played == 'Created':
+            # Return the game immediately if it's in 'Created' state
             return JsonResponse({
                 'status': 'success',
-                'game_id': active_game.id,
-                'message': f'Active game found for stake {stake}'
+                'game_id': recent_game.id,
+                'message': f'Waiting game found for stake {stake}'
             })
-        # Otherwise, we continue to create a new game below
+        elif recent_game.played == 'Started':
+            # Only return if within 20 seconds
+            time_diff = timezone.now() - recent_game.started_at
+            if time_diff.total_seconds() <= 20:
+                return JsonResponse({
+                    'status': 'success',
+                    'game_id': recent_game.id,
+                    'message': f'Active game found for stake {stake}'
+                })
 
-    # If no active game found, or if it’s too old, create a new one
+    # No valid recent game found; create a new one
     new_game = Game.objects.create(
         stake=stake,
         numberofplayers=0,
-        played='Started',
+        played='Created',  # Or 'Started' if preferred
         created_at=timezone.now(),
         started_at=timezone.now(),
         total_calls=0,

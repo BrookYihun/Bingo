@@ -94,8 +94,9 @@ class GameConsumer(WebsocketConsumer):
             from game.models import Game
             game = Game.objects.get(id=int(self.game_id))
 
-            if game.played == "Started":
+            if game.played == "Created":
                 game.started_at = timezone.now()
+                game.played = 'Started'
                 game.save()
                 self.send(text_data=json.dumps({
                     'type': 'timer_message',
@@ -144,7 +145,6 @@ class GameConsumer(WebsocketConsumer):
 
         is_running = self.get_game_state("is_running")
         game = Game.objects.get(id=self.game_id)
-        game.started_at = timezone.now()
         players = json.loads(game.playerCard)
         total_cards = sum(len(sublist) for player in players for sublist in player["card"])
         game.numberofplayers = int(total_cards)
