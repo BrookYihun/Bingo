@@ -454,32 +454,46 @@ class GameConsumer(WebsocketConsumer):
     def add_player(self, player_id, card_id):
         from game.models import Game
         from custom_auth.models import User
+        from decimal import Decimal
 
         game = Game.objects.get(id=int(self.game_id))
 
-        # Check if game status is not "playing"
-        if game.played == "playing":
-            # Send a message to the user indicating they can't join
+        # ✅ Check for multiple active games with the same stake (not Closed)
+        active_games_with_same_stake = Game.objects.filter(
+            stake=game.stake,
+            played__in=['Created', 'Started', 'playing']
+        ).exclude(id=game.id).count()
+
+        if active_games_with_same_stake >= 2:
             async_to_sync(self.channel_layer.send)(
                 self.channel_name,
                 {
                     'type': 'error',
-                    'message': 'Cannot join: The game is not currently playing.'
+                    'message': 'Please wait: Maximum number of active games for this stake is reached.'
                 }
             )
-            return  # Exit early since the game is not in the correct state
+            return  # ❌ Do not proceed further
 
-        # Load the existing player card data or initialize as an empty list
+        # ❗Only allow joining if the game is not "playing"
+        if game.played == "playing":
+            async_to_sync(self.channel_layer.send)(
+                self.channel_name,
+                {
+                    'type': 'error',
+                    'message': 'Cannot join: The game is already in progress.'
+                }
+            )
+            return
+
+        # ✅ Load or initialize playerCard
         try:
             players = json.loads(game.playerCard) if game.playerCard else []
         except json.JSONDecodeError:
             players = []
 
         if isinstance(players, list):
-            # Check if player already exists
             player_entry = next((p for p in players if p['user'] == player_id), None)
             if player_entry:
-                # If player already exists, add the card to their list if it's not already included
                 if isinstance(player_entry['card'], list):
                     if card_id not in player_entry['card']:
                         player_entry['card'].append(card_id)
@@ -487,20 +501,16 @@ class GameConsumer(WebsocketConsumer):
                     if player_entry['card'] != card_id:
                         player_entry['card'] = [player_entry['card'], card_id]
             else:
-                # If player does not exist, add new entry with the card as a list
                 players.append({'user': player_id, 'card': [card_id]})
         else:
-            # Initialize players list if it's empty or not properly formatted
             players = [{'user': player_id, 'card': [card_id]}]
 
-        from decimal import Decimal
-        # Get the user and check balance
+        # ✅ Balance Check
         user = User.objects.get(id=player_id)
         card_list = card_id if isinstance(card_id, list) else [card_id]
-        total_cost = Decimal(game.stake) * len(card_list) 
+        total_cost = Decimal(game.stake) * len(card_list)
 
         if user.wallet < total_cost:
-            # Insufficient balance, send an error message
             async_to_sync(self.channel_layer.send)(
                 self.channel_name,
                 {
@@ -509,20 +519,20 @@ class GameConsumer(WebsocketConsumer):
                 }
             )
             return
-        
-        # Deduct the stake amount from the user's wallet
-        # user.wallet -= Decimal(total_cost)
+
+        # Optional wallet deduction (currently commented out)
+        # user.wallet -= total_cost
         # user.save()
 
-        # Save the updated player list and calculate the accurate total number of cards
+        # ✅ Save game updates
         game.playerCard = json.dumps(players)
-        game.numberofplayers = sum(len(p['card']) if isinstance(p['card'], list) else 1 for p in players)  # Count all cards accurately
+        game.numberofplayers = sum(len(p['card']) if isinstance(p['card'], list) else 1 for p in players)
         game.save()
 
         async_to_sync(self.channel_layer.send)(
             self.channel_name,
             {
-                'type': 'sucess',
+                'type': 'success',
                 'message': 'Game will start soon'
             }
         )
