@@ -57,6 +57,7 @@ class GameConsumer(WebsocketConsumer):
             if game.played == 'Started':
                 self.send(text_data=json.dumps({
                     'type': 'timer_message',
+                    'server_time': str(timezone.now()),
                     'message': str(game.started_at)
                 }))
             
@@ -100,6 +101,7 @@ class GameConsumer(WebsocketConsumer):
                 game.save()
                 self.send(text_data=json.dumps({
                     'type': 'timer_message',
+                    'server_time': str(timezone.now()),
                     'message': str(game.started_at)
                 }))
 
@@ -161,6 +163,7 @@ class GameConsumer(WebsocketConsumer):
             self.room_group_name,
             {
                 'type': 'timer_message',
+                'server_time': str(timezone.now()),
                 'message': str(game.started_at)
             }
         )
@@ -273,6 +276,7 @@ class GameConsumer(WebsocketConsumer):
         message = event['message']
         self.send(text_data=json.dumps({
             'type': 'timer_message',
+            'server_time': event['server_time'],
             'message': message
         }))
 
