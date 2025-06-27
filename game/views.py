@@ -116,14 +116,16 @@ def generate_random_numbers():
 def get_active_games(request):
     now = timezone.now()
     
-    # Step 1: Get all games with 'Started' or 'Created' status
-    active_games_qs = Game.objects.filter(played__in=['Started', 'Created'])
-
-    # Step 2: Check if any 'Started' games are older than 500 seconds and update them
-    expired_games = active_games_qs.filter(played='Started', started_at__lt=now - timezone.timedelta(seconds=500))
+    # Step 1: Get all games with 'Started', 'Created', or 'playing' status
+    active_games_qs = Game.objects.filter(played__in=['Started', 'Created', 'Playing'])
+    
+    # Step 2: Filter games older than 500 seconds
+    expired_games = active_games_qs.filter(started_at__lt=now - timezone.timedelta(seconds=500))
+    
+    # Step 3: Update expired games to 'closed'
     expired_games.update(played='closed')
 
-    # Step 3: Refresh the queryset to only include valid active games after update
+    # Step 4: Refresh the queryset to only include valid active games after update
     active_games = (
         Game.objects.filter(played__in=['Started', 'Created'])  # Re-fetch active games
         .values('stake')                                        # Group by stake
