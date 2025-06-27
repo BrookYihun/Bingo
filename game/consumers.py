@@ -462,10 +462,10 @@ class GameConsumer(WebsocketConsumer):
 
         game = Game.objects.get(id=int(self.game_id))
 
-        # ✅ Check for multiple active games with the same stake (not Closed)
+        # ✅ Check for multiple active games with the same stake (only 'playing', not Closed)
         active_games_with_same_stake = Game.objects.filter(
             stake=game.stake,
-            played__in=['Created', 'Started', 'playing']
+            played='playing'
         ).exclude(id=game.id).count()
 
         if active_games_with_same_stake >= 2:
