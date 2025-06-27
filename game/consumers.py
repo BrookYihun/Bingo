@@ -38,6 +38,7 @@ class GameConsumer(WebsocketConsumer):
         self.game_id = self.scope['url_route']['kwargs']['game_id']
         self.room_group_name = f'game_{self.game_id}'
         from game.models import Game
+        from django.utils import timezone
         try:
             game = Game.objects.get(id=int(self.game_id))
             
@@ -55,12 +56,19 @@ class GameConsumer(WebsocketConsumer):
                 }))
             
             if game.played == 'Started':
+                start_delay = 29
+                start_time_with_delay = game.started_at + timezone.timedelta(seconds=start_delay)
+
+                # Calculate remaining time until actual game start
+                now = timezone.now()
+                remaining = (start_time_with_delay - now).total_seconds()
+                remaining_seconds = max(int(remaining), 0)  # Make sure it's not negative
                 self.send(text_data=json.dumps({
                     'type': 'timer_message',
-                    'server_time': str(timezone.now()),
-                    'message': str(game.started_at)
+                    'remaining_seconds': remaining_seconds,
+                    'message': str(game.started_at),
                 }))
-            
+                            
             self.game_random_numbers = json.loads(game.random_numbers)
             
             bingo = self.get_game_state("bingo")
@@ -99,10 +107,12 @@ class GameConsumer(WebsocketConsumer):
                 game.started_at = timezone.now()
                 game.played = 'Started'
                 game.save()
+                start_delay = 29
+                remaining_seconds = start_delay
                 self.send(text_data=json.dumps({
                     'type': 'timer_message',
-                    'server_time': str(timezone.now()),
-                    'message': str(game.started_at)
+                    'remaining_seconds': remaining_seconds,
+                    'message': str(game.started_at),
                 }))
 
                 async_to_sync(self.channel_layer.group_send)(
@@ -159,12 +169,20 @@ class GameConsumer(WebsocketConsumer):
         game.winner_price = winner_price 
         game.save()        
 
+        start_delay = 29
+        start_time_with_delay = game.started_at + timezone.timedelta(seconds=start_delay)
+
+        # Calculate remaining time until actual game start
+        now = timezone.now()
+        remaining = (start_time_with_delay - now).total_seconds()
+        remaining_seconds = max(int(remaining), 0)  # Make sure it's not negative
+
         async_to_sync(self.channel_layer.group_send)(
             self.room_group_name,
             {
                 'type': 'timer_message',
-                'server_time': str(timezone.now()),
-                'message': str(game.started_at)
+                'remaining_seconds': remaining_seconds,
+                'message': str(game.started_at),
             }
         )
 
@@ -276,7 +294,7 @@ class GameConsumer(WebsocketConsumer):
         message = event['message']
         self.send(text_data=json.dumps({
             'type': 'timer_message',
-            'server_time': event['server_time'],
+            'remaining_seconds': event['remaining_seconds'],
             'message': message
         }))
 
