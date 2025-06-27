@@ -589,6 +589,7 @@ class GameConsumer(WebsocketConsumer):
         updated_list = [player for player in players if player['user'] != player_id]
         game.playerCard = json.dumps(updated_list)
         game.numberofplayers = len(updated_list)
+        print(f"Updated player list: {updated_list}")
         game.save()
 
         # Broadcast the updated player list over the socket
