@@ -195,6 +195,14 @@ def get_game_stat(request, game_id):
         players = json.loads(game.playerCard) if game.playerCard else []
     except json.JSONDecodeError:
         players = []
+    
+    start_delay = 29
+    start_time_with_delay = game.started_at + timezone.timedelta(seconds=start_delay)
+
+    # Calculate remaining time until actual game start
+    now = timezone.now()
+    remaining = (start_time_with_delay - now).total_seconds()
+    remaining_seconds = max(int(remaining), 0)  # Make sure it's not negative
 
     # Prepare the game stats data
     data = {
@@ -206,7 +214,8 @@ def get_game_stat(request, game_id):
         "bonus": game.bonus,
         "winner": game.winner_price,
         "status": game.played,
-        "timer": game.started_at
+        "timer": game.started_at,
+        "remaining_seconds": remaining_seconds,
     }
 
     return Response(data)
