@@ -459,13 +459,25 @@ class GameConsumer(WebsocketConsumer):
         from game.models import Game
         from custom_auth.models import User
         from decimal import Decimal
+        from django.utils import timezone
 
         game = Game.objects.get(id=int(self.game_id))
+        
+        now = timezone.now()
+    
+        # Step 1: Get all games with 'Started', 'Created', or 'playing' status
+        active_games_qs = Game.objects.filter(played__in=['Started', 'Created', 'Playing'])
+        
+        # Step 2: Filter games older than 500 seconds
+        expired_games = active_games_qs.filter(started_at__lt=now - timezone.timedelta(seconds=500))
+        
+        # Step 3: Update expired games to 'closed'
+        expired_games.update(played='closed')
 
         # ✅ Check for multiple active games with the same stake (only 'playing', not Closed)
         active_games_with_same_stake = Game.objects.filter(
             stake=game.stake,
-            played='playing'
+            played='Playing'
         ).exclude(id=game.id).count()
 
         if active_games_with_same_stake >= 2:
