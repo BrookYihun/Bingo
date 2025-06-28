@@ -207,6 +207,7 @@ class GameConsumer(WebsocketConsumer):
         # Convert string to Python object
         game = Game.objects.get(id=self.game_id)
         player_cards_raw = game.playerCard
+        print(player_cards_raw)
         if isinstance(player_cards_raw, str):
             player_cards = json.loads(player_cards_raw)
         else:
