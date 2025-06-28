@@ -116,7 +116,7 @@ class RegisterTelegramView(APIView):
                 phone_number=phone_number,
                 name=name,
                 password=random_password,
-                chat_id=chat_id,
+                telegram_id=chat_id,
             )
 
         user.verify_otp()
