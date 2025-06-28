@@ -205,7 +205,7 @@ class GameConsumer(WebsocketConsumer):
         stake_amount = Decimal(game.stake)
 
         # Convert string to Python object
-        game.refresh_from_db()
+        game = Game.objects.get(id=self.game_id)
         player_cards_raw = game.playerCard
         if isinstance(player_cards_raw, str):
             player_cards = json.loads(player_cards_raw)
