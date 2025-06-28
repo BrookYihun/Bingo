@@ -488,7 +488,11 @@ class GameConsumer(WebsocketConsumer):
         active_games_qs = Game.objects.filter(played__in=['Started', 'Created', 'Playing'])
         
         # Step 2: Filter games older than 500 seconds
-        expired_games = active_games_qs.filter(started_at__lt=now - timezone.timedelta(seconds=500))
+        from django.db.models import Q
+
+        expired_games = active_games_qs.filter(
+            Q(started_at__lt=now - timezone.timedelta(seconds=500)) | Q(numberofplayers=0)
+        )
         
         # Step 3: Update expired games to 'closed'
         expired_games.update(played='closed')
