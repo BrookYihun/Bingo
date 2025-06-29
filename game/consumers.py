@@ -100,8 +100,8 @@ class GameConsumer(WebsocketConsumer):
 
         if user and user.is_authenticated:
             user_id = user.id
-            if game_id in self.bingo_page_users:
-                self.bingo_page_users[game_id].discard(user_id)
+            if game_id in GameConsumer.bingo_page_users:
+                GameConsumer.bingo_page_users[game_id].discard(user_id)
                 print(f"User {user_id} removed from bingo_page_users for game {game_id}")
 
     def receive(self, text_data):
@@ -142,14 +142,14 @@ class GameConsumer(WebsocketConsumer):
         if data['type']  == 'joined_bingo':
             user_id = data.get("userId")
             game_id = str(data.get("gameId"))
-            self.bingo_page_users.setdefault(game_id, set()).add(user_id)
+            GameConsumer.bingo_page_users.setdefault(game_id, set()).add(user_id)
             print(f"User {user_id} joined bingo page for game {game_id}")
 
-        if data['type']  == 'emove_number':
+        if data['type']  == 'remove_number':
             user_id = data.get("userId")
             game_id = str(data.get("gameId"))
             if game_id in self.bingo_page_users:
-                self.bingo_page_users[game_id].discard(user_id)
+                GameConsumer.bingo_page_users[game_id].discard(user_id)
                 self.remove_player(user_id)
                 print(f"User {user_id} left bingo page for game {game_id}")
 
