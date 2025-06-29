@@ -13,7 +13,8 @@ class GameConsumer(WebsocketConsumer):
     game_random_numbers = []
     called_numbers = []
     lock = threading.Lock()
-
+    active_games = {}
+    bingo_page_users = {}
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
