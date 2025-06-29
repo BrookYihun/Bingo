@@ -7,6 +7,7 @@ from asgiref.sync import async_to_sync
 import redis
 
 active_games = {}
+bingo_page_users = {}
 
 class GameConsumer(WebsocketConsumer):
     game_random_numbers = []
@@ -94,6 +95,15 @@ class GameConsumer(WebsocketConsumer):
             self.channel_name
         )
 
+        user = self.scope.get("user")
+        game_id = self.scope["url_route"]["kwargs"]["game_id"]
+
+        if user and user.is_authenticated:
+            user_id = user.id
+            if game_id in self.bingo_page_users:
+                self.bingo_page_users[game_id].discard(user_id)
+                print(f"User {user_id} removed from bingo_page_users for game {game_id}")
+
     def receive(self, text_data):
         data = json.loads(text_data)
         is_running = self.get_game_state("is_running")
@@ -129,6 +139,20 @@ class GameConsumer(WebsocketConsumer):
                     thread = threading.Thread(target=self.send_random_numbers_periodically)
                     thread.start()
 
+        if data['type']  == 'joined_bingo':
+            user_id = data.get("userId")
+            game_id = str(data.get("gameId"))
+            self.bingo_page_users.setdefault(game_id, set()).add(user_id)
+            print(f"User {user_id} joined bingo page for game {game_id}")
+
+        if data['type']  == 'emove_number':
+            user_id = data.get("userId")
+            game_id = str(data.get("gameId"))
+            if game_id in self.bingo_page_users:
+                self.bingo_page_users[game_id].discard(user_id)
+                self.remove_player(user_id)
+                print(f"User {user_id} left bingo page for game {game_id}")
+
 
         if data['type'] == 'bingo':
             async_to_sync(self.checkBingo(int(data['userId']), data['calledNumbers']))
@@ -147,9 +171,6 @@ class GameConsumer(WebsocketConsumer):
 
         if data['type'] == 'select_number':
             self.add_player(data['player_id'], data['card_id'])
-
-        if data['type'] == 'remove_number':
-            self.remove_player(data['player_id'])
 
     def send_random_numbers_periodically(self):
         from game.models import Game
@@ -213,30 +234,32 @@ class GameConsumer(WebsocketConsumer):
         else:
             player_cards = player_cards_raw
 
-        # Now iterate over the list of players
+        bingo_users = GameConsumer.bingo_page_users.get(str(game.id), set())
+
         for entry in player_cards:
             try:
                 user_id = entry["user"]
-                cards = entry["card"]  # cards = [[57, 69]]
-                # Flatten the nested list to count total card IDs
+                cards = entry["card"]
                 flattened_cards = [card_id for sublist in cards for card_id in sublist]
-                num_cards = len(flattened_cards) 
+                num_cards = len(flattened_cards)
                 total_deduction = stake_amount * num_cards
 
                 user = User.objects.get(id=user_id)
 
-                if user.wallet >= total_deduction:
-                    user.wallet -= total_deduction
-                    user.save()
+                if user_id in bingo_users:
+                    if user.wallet >= total_deduction:
+                        user.wallet -= total_deduction
+                        user.save()
+                    else:
+                        self.remove_player(self, user_id)
                 else:
-                    self.remove_player(self,user_id)
-                    # Optionally remove them from game or notify them here
+                    print(f"User {user_id} is not on the bingo page.")
+                    self.remove_player(self, user_id)
 
             except User.DoesNotExist:
                 print(f"User with id {user_id} not found.")
             except Exception as e:
                 print(f"Error processing deduction: {e}")
-
 
         # Send each number only once
         for num in self.game_random_numbers:
