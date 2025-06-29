@@ -252,7 +252,7 @@ class GameConsumer(WebsocketConsumer):
                         user.wallet -= total_deduction
                         user.save()
                     else:
-                        self.remove_player(self, user_id)
+                        self.remove_player(user_id)
                 else:
                     print(f"User {user_id} is not on the bingo page.")
                     self.remove_player(self, user_id)
