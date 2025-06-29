@@ -236,7 +236,7 @@ class GameConsumer(WebsocketConsumer):
             player_cards = player_cards_raw
 
         bingo_users = GameConsumer.bingo_page_users.get(str(game.id), set())
-
+        print(bingo_users)
         for entry in player_cards:
             try:
                 user_id = entry["user"]
