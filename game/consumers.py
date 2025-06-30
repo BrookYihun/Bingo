@@ -255,7 +255,7 @@ class GameConsumer(WebsocketConsumer):
                         self.remove_player(user_id)
                 else:
                     print(f"User {user_id} is not on the bingo page.")
-                    self.remove_player(self, user_id)
+                    self.remove_player(user_id)
 
             except User.DoesNotExist:
                 print(f"User with id {user_id} not found.")
