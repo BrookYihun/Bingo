@@ -151,7 +151,7 @@ class GameConsumer(WebsocketConsumer):
             game_id = str(data.get("gameId"))
             if game_id in self.bingo_page_users:
                 GameConsumer.bingo_page_users[game_id].discard(user_id)
-                self.remove_player(user_id)
+                # self.remove_player(user_id)
                 print(f"User {user_id} left bingo page for game {game_id}")
 
 
