@@ -552,30 +552,26 @@ class GameConsumer(WebsocketConsumer):
         from django.db.models import Q
 
         game = Game.objects.get(id=int(self.game_id))
-        
         now = timezone.now()
-    
-        # Step 1: Get games with specific statuses
-        active_games_qs = Game.objects.filter(played__in=['Started', 'Created', 'Playing'])
 
-        # Step 2: Define expiration conditions for each status
-        expired_games = active_games_qs.filter(
+        # Close expired games
+        expired_games = Game.objects.filter(
+            played__in=['Created', 'Started', 'Playing']
+        ).filter(
             Q(played='Created', started_at__lt=now - timezone.timedelta(seconds=30)) |
             Q(played='Started', started_at__lt=now - timezone.timedelta(seconds=30)) |
-            Q(played='Playing') & (Q(started_at__lt=now - timezone.timedelta(seconds=375)))
+            Q(played='Playing', started_at__lt=now - timezone.timedelta(seconds=375))
         )
-        
-        # Step 3: Update expired games to 'closed'
         expired_games.update(played='closed')
 
-        # ✅ Check for multiple active games with the same stake (only 'playing', not Closed)
-        active_games_with_same_stake = Game.objects.filter(
+        # Prevent too many active games with same stake
+        active_same_stake = Game.objects.filter(
             stake=game.stake,
             played='Playing',
             numberofplayers__gt=2
         ).exclude(id=game.id).count()
 
-        if active_games_with_same_stake > 2:
+        if active_same_stake > 2:
             async_to_sync(self.channel_layer.send)(
                 self.channel_name,
                 {
@@ -583,10 +579,9 @@ class GameConsumer(WebsocketConsumer):
                     'message': 'Please wait: Maximum number of active games for this stake is reached.'
                 }
             )
-            return  # ❌ Do not proceed further
+            return
 
-        # ❗Only allow joining if the game is not "playing"
-        if game.played == "playing":
+        if game.played.lower() == 'playing':
             async_to_sync(self.channel_layer.send)(
                 self.channel_name,
                 {
@@ -596,19 +591,21 @@ class GameConsumer(WebsocketConsumer):
             )
             return
 
-        # Remove any existing entry for this user
+        # ✅ Normalize card_id into a flat list
+        flat_card_list = card_id if isinstance(card_id, list) else [card_id]
+
+        # Remove any existing entry
         self.selected_players = [p for p in self.selected_players if p['user'] != player_id]
 
-        # Add the new player with their card
-        self.selected_players.append({'user': player_id, 'card': [card_id]})
+        # Append new entry
+        self.selected_players.append({'user': player_id, 'card': flat_card_list})
 
-        # Update player count in memory
-        self.player_count = sum(len(p['card']) if isinstance(p['card'], list) else 1 for p in self.selected_players)
+        # Update player count
+        self.player_count = sum(len(p['card']) for p in self.selected_players)
 
-        # ✅ Balance Check
+        # ✅ Balance check
         user = User.objects.get(id=player_id)
-        card_list = card_id if isinstance(card_id, list) else [card_id]
-        total_cost = Decimal(game.stake) * len(card_list)
+        total_cost = Decimal(game.stake) * len(flat_card_list)
 
         if user.wallet < total_cost:
             async_to_sync(self.channel_layer.send)(
@@ -620,24 +617,16 @@ class GameConsumer(WebsocketConsumer):
             )
             return
 
-        # Optional wallet deduction (currently commented out)
-        # user.wallet -= total_cost
-        # user.save()
-
-        # # ✅ Save game updates
-        # game.playerCard = json.dumps(players)
-        # game.numberofplayers = sum(len(p['card']) if isinstance(p['card'], list) else 1 for p in players)
-        # game.save()
-
+        # ✅ Success message
         async_to_sync(self.channel_layer.send)(
             self.channel_name,
             {
-                'type': 'sucess',
+                'type': 'success',
                 'message': 'Game will start soon'
             }
         )
 
-        # Broadcast the updated player list over the socket
+        # ✅ Broadcast updated player list
         async_to_sync(self.channel_layer.group_send)(
             self.room_group_name,
             {
@@ -645,6 +634,7 @@ class GameConsumer(WebsocketConsumer):
                 'player_list': self.selected_players
             }
         )
+
 
     def remove_player(self, player_id):
         # Remove the player from the in-memory selected_players list (like add_player)
