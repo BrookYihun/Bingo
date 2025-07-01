@@ -259,6 +259,7 @@ class GameConsumer(WebsocketConsumer):
         # Get game and stake
         stake_amount = Decimal(game.stake)
         players = self.selected_players
+        print(f"Selected players: {players}")
         total_cards = sum(len(sublist) for player in players for sublist in player["card"])
         game.numberofplayers = int(total_cards)
         winner_price = total_cards * int(game.stake)
