@@ -6,6 +6,7 @@ from channels.generic.websocket import WebsocketConsumer
 from asgiref.sync import async_to_sync
 import redis
 
+
 class GameConsumer(WebsocketConsumer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -172,6 +173,35 @@ class GameConsumer(WebsocketConsumer):
 
         if data['type'] == 'select_number':
             self.add_player(data['player_id'], data['card_id'])
+        
+        if data['type'] == 'card_data':
+            from game.models import Card
+            game = Game.objects.get(id=game_id)
+            
+            # Find and flatten all card IDs for the specified user
+            user_cards = []
+            for player in self.selected_players:
+                if player['user'] == int(data.get("userId")):
+                    # Find the user's cards from self.selected_players (should be self.selected_players, not self.selected_numbers)
+                    user_cards = []
+                    for entry in self.selected_players:
+                        if entry['user'] == int(data.get("userId")):
+                            # Flatten card IDs for this player
+                            user_cards.extend(entry['card'] if isinstance(entry['card'], list) else [entry['card']])
+                    # Fetch the Card objects
+                    cards = Card.objects.filter(id__in=user_cards)
+                    bingo_table_data = [
+                        {
+                            "id": card.id,
+                            "numbers": json.loads(card.numbers)
+                        }
+                        for card in cards
+                    ]
+                    self.send(text_data=json.dumps({
+                        "type": "card_data",
+                        "cards": bingo_table_data
+                    }))
+                    return
 
     def send_random_numbers_periodically(self):
         from game.models import Game
