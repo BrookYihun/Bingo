@@ -223,25 +223,30 @@ class GameConsumer(WebsocketConsumer):
 
         from decimal import Decimal
         from custom_auth.models import User
+        import json
 
+        # Get game and stake
+        game = Game.objects.get(id=self.game_id)
         stake_amount = Decimal(game.stake)
 
-        # Convert string to Python object
-        game = Game.objects.get(id=self.game_id)
+        # Parse playerCard
         player_cards_raw = game.playerCard
-        print(player_cards_raw)
         if isinstance(player_cards_raw, str):
             player_cards = json.loads(player_cards_raw)
         else:
             player_cards = player_cards_raw
 
+        # Deduction logic
         bingo_users = GameConsumer.bingo_page_users.get(str(game.id), set())
-        print(bingo_users)
+        updated_player_cards = []
+
         for entry in player_cards:
             try:
                 user_id = entry["user"]
                 cards = entry["card"]
-                flattened_cards = [card_id for sublist in cards for card_id in sublist]
+
+                # Flatten cards in case of nested structure
+                flattened_cards = [card_id for sublist in cards for card_id in sublist] if isinstance(cards[0], list) else cards
                 num_cards = len(flattened_cards)
                 total_deduction = stake_amount * num_cards
 
@@ -251,6 +256,9 @@ class GameConsumer(WebsocketConsumer):
                     if user.wallet >= total_deduction:
                         user.wallet -= total_deduction
                         user.save()
+                        # Add user back to updated list
+                        entry["card"] = flattened_cards  # Ensure card is flat before saving
+                        updated_player_cards.append(entry)
                     else:
                         self.remove_player(user_id)
                 else:
@@ -261,6 +269,10 @@ class GameConsumer(WebsocketConsumer):
                 print(f"User with id {user_id} not found.")
             except Exception as e:
                 print(f"Error processing deduction: {e}")
+
+        # Save updated player cards
+        game.playerCard = json.dumps(updated_player_cards)
+        game.save()
 
         # Send each number only once
         for num in self.game_random_numbers:
@@ -504,19 +516,23 @@ class GameConsumer(WebsocketConsumer):
         from custom_auth.models import User
         from decimal import Decimal
         from django.utils import timezone
+        from django.db.models import Q
 
         game = Game.objects.get(id=int(self.game_id))
         
         now = timezone.now()
     
-        # Step 1: Get all games with 'Started', 'Created', or 'playing' status
+        # Step 1: Get games with specific statuses
         active_games_qs = Game.objects.filter(played__in=['Started', 'Created', 'Playing'])
-        
-        # Step 2: Filter games older than 500 seconds
-        from django.db.models import Q
 
+        # Step 2: Define expiration conditions for each status
         expired_games = active_games_qs.filter(
-            Q(started_at__lt=now - timezone.timedelta(seconds=500)) | Q(numberofplayers=0)
+            Q(played='Created', started_at__lt=now - timezone.timedelta(seconds=30)) |
+            Q(played='Started', started_at__lt=now - timezone.timedelta(seconds=30)) |
+            Q(played='Playing') & (
+                Q(started_at__lt=now - timezone.timedelta(seconds=375)) |
+                Q(numberofplayers=0)
+            )
         )
         
         # Step 3: Update expired games to 'closed'
@@ -558,12 +574,8 @@ class GameConsumer(WebsocketConsumer):
         if isinstance(players, list):
             player_entry = next((p for p in players if p['user'] == player_id), None)
             if player_entry:
-                if isinstance(player_entry['card'], list):
-                    if card_id not in player_entry['card']:
-                        player_entry['card'].append(card_id)
-                else:
-                    if player_entry['card'] != card_id:
-                        player_entry['card'] = [player_entry['card'], card_id]
+                # Always replace the card list with the new card_id (removing previous cards)
+                player_entry['card'] = [card_id]
             else:
                 players.append({'user': player_id, 'card': [card_id]})
         else:

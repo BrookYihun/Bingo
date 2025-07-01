@@ -117,6 +117,7 @@ class RegisterTelegramView(APIView):
                 name=name,
                 password=random_password,
                 telegram_id=chat_id,
+                wallet=10.0,  # Initialize wallet to 0.0
             )
 
         user.verify_otp()
