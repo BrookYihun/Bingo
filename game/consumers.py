@@ -619,7 +619,7 @@ class GameConsumer(WebsocketConsumer):
             return
         selected_players = self.get_selected_players()
         # Remove any existing entry for this user
-        selected_players = [p for p in self.selected_players if p['user'] != player_id]
+        selected_players = [p for p in selected_players if p['user'] != player_id]
 
         # Add the new player with their card
         selected_players.append({'user': player_id, 'card': [card_id]})
@@ -678,7 +678,7 @@ class GameConsumer(WebsocketConsumer):
         self.set_selected_players(selected_players)
         player_count = sum(len(p['card']) if isinstance(p['card'], list) else 1 for p in selected_players)
         self.set_player_count(player_count)
-        
+
         # Broadcast the updated player list over the socket
         async_to_sync(self.channel_layer.group_send)(
             self.room_group_name,
