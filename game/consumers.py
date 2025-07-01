@@ -11,14 +11,33 @@ class GameConsumer(WebsocketConsumer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
-        self.selected_players = []  # e.g., [{'user': 217, 'card': [101]}]
-        self.player_count = 0
         self.game_random_numbers = []
         self.called_numbers = []
         self.lock = threading.Lock()
         self.active_games = {}
-        self.bingo_page_users = {}
         self.selected_cards = []
+
+    # --- Shared state helpers ---
+    def get_selected_players(self):
+        data = self.redis_client.get(f"selected_players_{self.game_id}")
+        return json.loads(data) if data else []
+
+    def set_selected_players(self, players):
+        self.redis_client.set(f"selected_players_{self.game_id}", json.dumps(players))
+
+    def get_player_count(self):
+        count = self.redis_client.get(f"player_count_{self.game_id}")
+        return int(count) if count else 0
+
+    def set_player_count(self, count):
+        self.redis_client.set(f"player_count_{self.game_id}", int(count))
+
+    def get_bingo_page_users(self):
+        data = self.redis_client.get(f"bingo_page_users_{self.game_id}")
+        return set(json.loads(data)) if data else set()
+
+    def set_bingo_page_users(self, users):
+        self.redis_client.set(f"bingo_page_users_{self.game_id}", json.dumps(list(users)))
 
     def get_game_state(self, key):
         """
@@ -143,17 +162,18 @@ class GameConsumer(WebsocketConsumer):
 
         if data['type']  == 'joined_bingo':
             user_id = data.get("userId")
-            game_id = str(data.get("gameId"))
-            self.bingo_page_users.setdefault(game_id, set()).add(user_id)
-            print(f"User {user_id} joined bingo page for game {game_id}")
+            bingo_page_users = self.get_bingo_page_users()
+            bingo_page_users.add(user_id)
+            self.set_bingo_page_users(bingo_page_users)
+            print(f"User {user_id} joined bingo page for game {self.game_id}")
 
         if data['type']  == 'remove_number':
             user_id = data.get("userId")
-            game_id = str(data.get("gameId"))
-            if game_id in self.bingo_page_users:
-                self.bingo_page_users[game_id].discard(user_id)
-                self.remove_player(user_id)
-                print(f"User {user_id} left bingo page for game {game_id}")
+            bingo_page_users = self.get_bingo_page_users()
+            bingo_page_users.discard(user_id)
+            self.set_bingo_page_users(bingo_page_users)
+            self.remove_player(user_id)
+            print(f"User {user_id} left bingo page for game {self.game_id}")
 
 
         if data['type'] == 'bingo':
@@ -601,6 +621,10 @@ class GameConsumer(WebsocketConsumer):
 
         # Add the new player with their card
         self.selected_players.append({'user': player_id, 'card': [card_id]})
+
+        # Update player count in Redis
+        player_count = sum(len(p['card']) if isinstance(p['card'], list) else 1 for p in self.selected_players)
+        self.set_player_count(player_count)
 
         # Update player count in memory
         self.player_count = sum(len(p['card']) if isinstance(p['card'], list) else 1 for p in self.selected_players)
