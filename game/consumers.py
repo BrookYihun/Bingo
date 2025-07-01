@@ -176,6 +176,7 @@ class GameConsumer(WebsocketConsumer):
         
         if data['type'] == 'card_data':
             from game.models import Card,Game
+            game_id = int(self.game_id)
             game = Game.objects.get(id=game_id)
             
             # Find and flatten all card IDs for the specified user
