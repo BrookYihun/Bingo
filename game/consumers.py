@@ -121,8 +121,10 @@ class GameConsumer(WebsocketConsumer):
 
         if user and user.is_authenticated:
             user_id = user.id
-            if game_id in self.bingo_page_users:
-                self.bingo_page_users[game_id].discard(user_id)
+            bingo_page_users = self.get_bingo_page_users()
+            if game_id in bingo_page_users:
+                bingo_page_users.discard(user_id)
+                self.set_bingo_page_users(bingo_page_users)
                 print(f"User {user_id} removed from bingo_page_users for game {game_id}")
 
     def receive(self, text_data):
@@ -290,7 +292,9 @@ class GameConsumer(WebsocketConsumer):
             game.admin_cut = admin_cut
         game.winner_price = winner_price
 
-        bingo_users = self.bingo_page_users.get(str(game.id), set())
+        bingo_page_users = self.get_bingo_page_users()
+
+        bingo_users = bingo_page_users
         updated_player_cards = []
 
         for entry in players:
