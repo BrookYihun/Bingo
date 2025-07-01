@@ -175,18 +175,16 @@ class GameConsumer(WebsocketConsumer):
             self.add_player(data['player_id'], data['card_id'])
         
         if data['type'] == 'card_data':
-            from game.models import Card,Game
+            from game.models import Card, Game
             game_id = int(self.game_id)
             game = Game.objects.get(id=game_id)
             
-            # Find and flatten all card IDs for the specified user
             user_cards = []
+
             for player in self.selected_players:
                 if player['user'] == int(data.get("userId")):
-                    # Flatten card IDs for this player
                     cards_field = player['card']
                     if isinstance(cards_field, list):
-                        # Flatten nested lists if needed
                         def flatten(lst):
                             for item in lst:
                                 if isinstance(item, list):
@@ -196,9 +194,12 @@ class GameConsumer(WebsocketConsumer):
                         user_cards = list(flatten(cards_field))
                     else:
                         user_cards = [int(cards_field)]
-                    break  # Found the user, no need to continue
+                    break
 
-            # Fetch the Card objects
+            if not user_cards:
+                print("No cards found for user, skipping response.")
+                return  # ✅ Don't send empty card data
+
             cards = Card.objects.filter(id__in=user_cards)
             bingo_table_data = [
                 {
@@ -207,7 +208,7 @@ class GameConsumer(WebsocketConsumer):
                 }
                 for card in cards
             ]
-            print(bingo_table_data)
+            print("Sending cards:", bingo_table_data)
             self.send(text_data=json.dumps({
                 "type": "card_data",
                 "cards": bingo_table_data
