@@ -541,10 +541,11 @@ class GameConsumer(WebsocketConsumer):
         # ✅ Check for multiple active games with the same stake (only 'playing', not Closed)
         active_games_with_same_stake = Game.objects.filter(
             stake=game.stake,
-            played='Playing'
+            played='Playing',
+            numberofplayers__gt=2
         ).exclude(id=game.id).count()
 
-        if active_games_with_same_stake >= 2:
+        if active_games_with_same_stake > 2:
             async_to_sync(self.channel_layer.send)(
                 self.channel_name,
                 {
@@ -571,15 +572,19 @@ class GameConsumer(WebsocketConsumer):
         except json.JSONDecodeError:
             players = []
 
-        if isinstance(players, list):
-            player_entry = next((p for p in players if p['user'] == player_id), None)
-            if player_entry:
-                # Always replace the card list with the new card_id (removing previous cards)
-                player_entry['card'] = [card_id]
-            else:
-                players.append({'user': player_id, 'card': [card_id]})
-        else:
-            players = [{'user': player_id, 'card': [card_id]}]
+        # Ensure players is a list
+        if not isinstance(players, list):
+            players = []
+
+        # Remove any existing entry for this user
+        players = [p for p in players if p['user'] != player_id]
+
+        # Add the new/updated player entry
+        players.append({'user': player_id, 'card': [card_id]})
+
+        # Save back to game
+        game.playerCard = json.dumps(players)
+        game.save()
 
         # ✅ Balance Check
         user = User.objects.get(id=player_id)
