@@ -200,8 +200,8 @@ class GameConsumer(WebsocketConsumer):
             game = Game.objects.get(id=game_id)
             
             user_cards = []
-
-            for player in self.selected_players:
+            selected_players = self.get_selected_players()
+            for player in selected_players:
                 if player['user'] == int(data.get("userId")):
                     cards_field = player['card']
                     if isinstance(cards_field, list):
@@ -278,7 +278,8 @@ class GameConsumer(WebsocketConsumer):
 
         # Get game and stake
         stake_amount = Decimal(game.stake)
-        players = self.selected_players
+        selected_players = self.get_selected_players()
+        players = selected_players
         print(f"Selected players: {players}")
         total_cards = sum(len(sublist) for player in players for sublist in player["card"])
         game.numberofplayers = int(total_cards)
@@ -411,7 +412,8 @@ class GameConsumer(WebsocketConsumer):
         
         # Retrieve player's cards based on the provided user_id
         print(game.playerCard)
-        players = self.selected_players
+        selected_players = self.get_selected_players()
+        players = selected_players
         player_cards = [entry['card'] for entry in players if entry['user'] == user_id]
 
         if not player_cards:
@@ -615,21 +617,18 @@ class GameConsumer(WebsocketConsumer):
                 }
             )
             return
-
+        selected_players = self.get_selected_players()
         # Remove any existing entry for this user
-        self.selected_players = [p for p in self.selected_players if p['user'] != player_id]
+        selected_players = [p for p in self.selected_players if p['user'] != player_id]
 
         # Add the new player with their card
-        self.selected_players.append({'user': player_id, 'card': [card_id]})
+        selected_players.append({'user': player_id, 'card': [card_id]})
+
+        self.set_selected_players(selected_players)
 
         # Update player count in Redis
-        player_count = sum(len(p['card']) if isinstance(p['card'], list) else 1 for p in self.selected_players)
+        player_count = sum(len(p['card']) if isinstance(p['card'], list) else 1 for p in selected_players)
         self.set_player_count(player_count)
-
-        # Update player count in memory
-        self.player_count = sum(len(p['card']) if isinstance(p['card'], list) else 1 for p in self.selected_players)
-
-        print(self.selected_players)
         
         # ✅ Balance Check
         user = User.objects.get(id=player_id)
@@ -674,9 +673,12 @@ class GameConsumer(WebsocketConsumer):
 
     def remove_player(self, player_id):
         # Remove the player from the in-memory selected_players list (like add_player)
-        self.selected_players = [p for p in self.selected_players if p['user'] != player_id]
-        self.player_count = sum(len(p['card']) if isinstance(p['card'], list) else 1 for p in self.selected_players)
-
+        selected_players = self.get_selected_players()
+        selected_players = [p for p in selected_players if p['user'] != player_id]
+        self.set_selected_players(selected_players)
+        player_count = sum(len(p['card']) if isinstance(p['card'], list) else 1 for p in selected_players)
+        self.set_player_count(player_count)
+        
         # Broadcast the updated player list over the socket
         async_to_sync(self.channel_layer.group_send)(
             self.room_group_name,
