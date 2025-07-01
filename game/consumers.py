@@ -183,27 +183,36 @@ class GameConsumer(WebsocketConsumer):
             user_cards = []
             for player in self.selected_players:
                 if player['user'] == int(data.get("userId")):
-                    # Find the user's cards from self.selected_players (should be self.selected_players, not self.selected_players)
-                    user_cards = []
-                    for entry in self.selected_players:
-                        if entry['user'] == int(data.get("userId")):
-                            # Flatten card IDs for this player
-                            user_cards.extend(entry['card'] if isinstance(entry['card'], list) else [entry['card']])
-                    # Fetch the Card objects
-                    cards = Card.objects.filter(id__in=user_cards)
-                    bingo_table_data = [
-                        {
-                            "id": card.id,
-                            "numbers": json.loads(card.numbers)
-                        }
-                        for card in cards
-                    ]
-                    print(bingo_table_data)
-                    self.send(text_data=json.dumps({
-                        "type": "card_data",
-                        "cards": bingo_table_data
-                    }))
-                    return
+                    # Flatten card IDs for this player
+                    cards_field = player['card']
+                    if isinstance(cards_field, list):
+                        # Flatten nested lists if needed
+                        def flatten(lst):
+                            for item in lst:
+                                if isinstance(item, list):
+                                    yield from flatten(item)
+                                else:
+                                    yield int(item)
+                        user_cards = list(flatten(cards_field))
+                    else:
+                        user_cards = [int(cards_field)]
+                    break  # Found the user, no need to continue
+
+            # Fetch the Card objects
+            cards = Card.objects.filter(id__in=user_cards)
+            bingo_table_data = [
+                {
+                    "id": card.id,
+                    "numbers": json.loads(card.numbers)
+                }
+                for card in cards
+            ]
+            print(bingo_table_data)
+            self.send(text_data=json.dumps({
+                "type": "card_data",
+                "cards": bingo_table_data
+            }))
+            return
 
     def send_random_numbers_periodically(self):
         from game.models import Game
