@@ -548,10 +548,7 @@ class GameConsumer(WebsocketConsumer):
         expired_games = active_games_qs.filter(
             Q(played='Created', started_at__lt=now - timezone.timedelta(seconds=30)) |
             Q(played='Started', started_at__lt=now - timezone.timedelta(seconds=30)) |
-            Q(played='Playing') & (
-                Q(started_at__lt=now - timezone.timedelta(seconds=375)) |
-                Q(numberofplayers=0)
-            )
+            Q(played='Playing') & (Q(started_at__lt=now - timezone.timedelta(seconds=375)))
         )
         
         # Step 3: Update expired games to 'closed'
