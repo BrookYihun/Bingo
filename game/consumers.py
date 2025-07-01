@@ -102,8 +102,8 @@ class GameConsumer(WebsocketConsumer):
 
         if user and user.is_authenticated:
             user_id = user.id
-            if game_id in GameConsumer.bingo_page_users:
-                GameConsumer.bingo_page_users[game_id].discard(user_id)
+            if game_id in self.bingo_page_users:
+                self.bingo_page_users[game_id].discard(user_id)
                 print(f"User {user_id} removed from bingo_page_users for game {game_id}")
 
     def receive(self, text_data):
@@ -144,14 +144,14 @@ class GameConsumer(WebsocketConsumer):
         if data['type']  == 'joined_bingo':
             user_id = data.get("userId")
             game_id = str(data.get("gameId"))
-            GameConsumer.bingo_page_users.setdefault(game_id, set()).add(user_id)
+            self.bingo_page_users.setdefault(game_id, set()).add(user_id)
             print(f"User {user_id} joined bingo page for game {game_id}")
 
         if data['type']  == 'remove_number':
             user_id = data.get("userId")
             game_id = str(data.get("gameId"))
-            if game_id in GameConsumer.bingo_page_users:
-                GameConsumer.bingo_page_users[game_id].discard(user_id)
+            if game_id in self.bingo_page_users:
+                self.bingo_page_users[game_id].discard(user_id)
                 self.remove_player(user_id)
                 print(f"User {user_id} left bingo page for game {game_id}")
 
@@ -161,8 +161,8 @@ class GameConsumer(WebsocketConsumer):
             bingo = self.get_game_state("bingo")
             if bingo:
                 self.set_game_state("is_running",False)
-                if self.game_id in GameConsumer.active_games:
-                    del GameConsumer.active_games[self.game_id]
+                if self.game_id in self.active_games:
+                    del self.active_games[self.game_id]
                 # self.close()  # Disconnect the WebSocket after a bingo
             # else:
             #     self.send(text_data=json.dumps({
@@ -182,7 +182,7 @@ class GameConsumer(WebsocketConsumer):
             user_cards = []
             for player in self.selected_players:
                 if player['user'] == int(data.get("userId")):
-                    # Find the user's cards from self.selected_players (should be self.selected_players, not self.selected_numbers)
+                    # Find the user's cards from self.selected_players (should be self.selected_players, not self.selected_players)
                     user_cards = []
                     for entry in self.selected_players:
                         if entry['user'] == int(data.get("userId")):
@@ -246,7 +246,7 @@ class GameConsumer(WebsocketConsumer):
 
         # Get game and stake
         stake_amount = Decimal(game.stake)
-        players = self.selected_numbers
+        players = self.selected_players
         total_cards = sum(len(sublist) for player in players for sublist in player["card"])
         game.numberofplayers = int(total_cards)
         winner_price = total_cards * int(game.stake)
@@ -256,7 +256,7 @@ class GameConsumer(WebsocketConsumer):
             game.admin_cut = admin_cut
         game.winner_price = winner_price
 
-        bingo_users = GameConsumer.bingo_page_users.get(str(game.id), set())
+        bingo_users = self.bingo_page_users.get(str(game.id), set())
         updated_player_cards = []
 
         for entry in players:
@@ -320,8 +320,8 @@ class GameConsumer(WebsocketConsumer):
         self.set_game_state("is_running",False)
 
         # Remove from active games and disconnect the consumer
-        if self.game_id in GameConsumer.active_games:
-            del GameConsumer.active_games[self.game_id]
+        if self.game_id in self.active_games:
+            del self.active_games[self.game_id]
         self.close()  # Disconnect the WebSocket after sending all numbers
 
 
