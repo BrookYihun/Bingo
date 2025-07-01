@@ -688,7 +688,7 @@ class GameConsumer(WebsocketConsumer):
             self.room_group_name,
             {
                 'type': 'update_player_list',
-                'player_list': self.selected_players
+                'player_list': self.get_selected_players()
             }
         )
 
