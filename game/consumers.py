@@ -197,6 +197,7 @@ class GameConsumer(WebsocketConsumer):
                         }
                         for card in cards
                     ]
+                    print(bingo_table_data)
                     self.send(text_data=json.dumps({
                         "type": "card_data",
                         "cards": bingo_table_data
