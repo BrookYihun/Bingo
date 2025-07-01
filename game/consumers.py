@@ -6,18 +6,18 @@ from channels.generic.websocket import WebsocketConsumer
 from asgiref.sync import async_to_sync
 import redis
 
-active_games = {}
-bingo_page_users = {}
-
 class GameConsumer(WebsocketConsumer):
-    game_random_numbers = []
-    called_numbers = []
-    lock = threading.Lock()
-    active_games = {}
-    bingo_page_users = {}
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
+        self.selected_players = []  # e.g., [{'user': 217, 'card': [101]}]
+        self.player_count = 0
+        self.game_random_numbers = []
+        self.called_numbers = []
+        self.lock = threading.Lock()
+        self.active_games = {}
+        self.bingo_page_users = {}
+        self.selected_cards = []
 
     def get_game_state(self, key):
         """
@@ -149,9 +149,9 @@ class GameConsumer(WebsocketConsumer):
         if data['type']  == 'remove_number':
             user_id = data.get("userId")
             game_id = str(data.get("gameId"))
-            if game_id in self.bingo_page_users:
+            if game_id in GameConsumer.bingo_page_users:
                 GameConsumer.bingo_page_users[game_id].discard(user_id)
-                # self.remove_player(user_id)
+                self.remove_player(user_id)
                 print(f"User {user_id} left bingo page for game {game_id}")
 
 
@@ -160,8 +160,8 @@ class GameConsumer(WebsocketConsumer):
             bingo = self.get_game_state("bingo")
             if bingo:
                 self.set_game_state("is_running",False)
-                if self.game_id in active_games:
-                    del active_games[self.game_id]
+                if self.game_id in GameConsumer.active_games:
+                    del GameConsumer.active_games[self.game_id]
                 # self.close()  # Disconnect the WebSocket after a bingo
             # else:
             #     self.send(text_data=json.dumps({
@@ -178,18 +178,7 @@ class GameConsumer(WebsocketConsumer):
         import json
 
         is_running = self.get_game_state("is_running")
-        game = Game.objects.get(id=self.game_id)
-        players = json.loads(game.playerCard)
-        total_cards = sum(len(sublist) for player in players for sublist in player["card"])
-        game.numberofplayers = int(total_cards)
-        print(total_cards)
-        winner_price = total_cards * int(game.stake)
-        if winner_price >= 100:
-            admin_cut = winner_price * 0.2
-            winner_price = winner_price - admin_cut
-            game.admin_cut = admin_cut
-        game.winner_price = winner_price 
-        game.save()        
+        game = Game.objects.get(id=self.game_id)       
 
         start_delay = 29
         start_time_with_delay = game.started_at + timezone.timedelta(seconds=start_delay)
@@ -226,21 +215,21 @@ class GameConsumer(WebsocketConsumer):
         import json
 
         # Get game and stake
-        game = Game.objects.get(id=self.game_id)
         stake_amount = Decimal(game.stake)
+        players = self.selected_numbers
+        total_cards = sum(len(sublist) for player in players for sublist in player["card"])
+        game.numberofplayers = int(total_cards)
+        winner_price = total_cards * int(game.stake)
+        if winner_price >= 100:
+            admin_cut = winner_price * 0.2
+            winner_price = winner_price - admin_cut
+            game.admin_cut = admin_cut
+        game.winner_price = winner_price
 
-        # Parse playerCard
-        player_cards_raw = game.playerCard
-        if isinstance(player_cards_raw, str):
-            player_cards = json.loads(player_cards_raw)
-        else:
-            player_cards = player_cards_raw
-
-        # Deduction logic
         bingo_users = GameConsumer.bingo_page_users.get(str(game.id), set())
         updated_player_cards = []
 
-        for entry in player_cards:
+        for entry in players:
             try:
                 user_id = entry["user"]
                 cards = entry["card"]
@@ -301,8 +290,8 @@ class GameConsumer(WebsocketConsumer):
         self.set_game_state("is_running",False)
 
         # Remove from active games and disconnect the consumer
-        if self.game_id in active_games:
-            del active_games[self.game_id]
+        if self.game_id in GameConsumer.active_games:
+            del GameConsumer.active_games[self.game_id]
         self.close()  # Disconnect the WebSocket after sending all numbers
 
 
@@ -566,25 +555,14 @@ class GameConsumer(WebsocketConsumer):
             )
             return
 
-        # ✅ Load or initialize playerCard
-        try:
-            players = json.loads(game.playerCard) if game.playerCard else []
-        except json.JSONDecodeError:
-            players = []
-
-        # Ensure players is a list
-        if not isinstance(players, list):
-            players = []
-
         # Remove any existing entry for this user
-        players = [p for p in players if p['user'] != player_id]
+        self.selected_players = [p for p in self.selected_players if p['user'] != player_id]
 
-        # Add the new/updated player entry
-        players.append({'user': player_id, 'card': [card_id]})
+        # Add the new player with their card
+        self.selected_players.append({'user': player_id, 'card': [card_id]})
 
-        # Save back to game
-        game.playerCard = json.dumps(players)
-        game.save()
+        # Update player count in memory
+        self.player_count = sum(len(p['card']) if isinstance(p['card'], list) else 1 for p in self.selected_players)
 
         # ✅ Balance Check
         user = User.objects.get(id=player_id)
@@ -605,10 +583,10 @@ class GameConsumer(WebsocketConsumer):
         # user.wallet -= total_cost
         # user.save()
 
-        # ✅ Save game updates
-        game.playerCard = json.dumps(players)
-        game.numberofplayers = sum(len(p['card']) if isinstance(p['card'], list) else 1 for p in players)
-        game.save()
+        # # ✅ Save game updates
+        # game.playerCard = json.dumps(players)
+        # game.numberofplayers = sum(len(p['card']) if isinstance(p['card'], list) else 1 for p in players)
+        # game.save()
 
         async_to_sync(self.channel_layer.send)(
             self.channel_name,
@@ -623,31 +601,24 @@ class GameConsumer(WebsocketConsumer):
             self.room_group_name,
             {
                 'type': 'update_player_list',
-                'player_list': players
+                'player_list': self.selected_players
             }
         )
 
     def remove_player(self, player_id):
-        from game.models import Game
-        game = Game.objects.get(id=int(self.game_id))
-
-        # Update the player list in the database
-        players = json.loads(game.playerCard)
-        updated_list = [player for player in players if player['user'] != player_id]
-        game.playerCard = json.dumps(updated_list)
-        game.numberofplayers = len(updated_list)
-        print(f"Updated player list: {updated_list}")
-        game.save()
+        # Remove the player from the in-memory selected_players list (like add_player)
+        self.selected_players = [p for p in self.selected_players if p['user'] != player_id]
+        self.player_count = sum(len(p['card']) if isinstance(p['card'], list) else 1 for p in self.selected_players)
 
         # Broadcast the updated player list over the socket
         async_to_sync(self.channel_layer.group_send)(
             self.room_group_name,
             {
                 'type': 'update_player_list',
-                'player_list': updated_list
+                'player_list': self.selected_players
             }
         )
-        
+
     def update_player_list(self, event):
         player_list = event['player_list']
         # Send the updated player list to WebSocket clients
