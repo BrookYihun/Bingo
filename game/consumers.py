@@ -20,9 +20,12 @@ class GameConsumer(WebsocketConsumer):
     # --- Shared state helpers ---
     def get_selected_players(self):
         data = self.redis_client.get(f"selected_players_{self.game_id}")
-        return json.loads(data) if data else []
+        players = json.loads(data) if data else []
+        print(f"[get_selected_players] For game {self.game_id}: {players}")
+        return players
 
     def set_selected_players(self, players):
+        print(f"[set_selected_players] For game {self.game_id}: {players}")
         self.redis_client.set(f"selected_players_{self.game_id}", json.dumps(players))
 
     def get_player_count(self):
@@ -622,12 +625,13 @@ class GameConsumer(WebsocketConsumer):
             )
             return
         selected_players = self.get_selected_players()
+        print(f"[add_player][before] For game {self.game_id}: {selected_players}")
         # Remove any existing entry for this user
         selected_players = [p for p in selected_players if p['user'] != player_id]
 
         # Add the new player with their card
         selected_players.append({'user': player_id, 'card': [card_id]})
-
+        print(f"[add_player][after append] For game {self.game_id}: {selected_players}")
         self.set_selected_players(selected_players)
 
         # Update player count in Redis
@@ -676,9 +680,10 @@ class GameConsumer(WebsocketConsumer):
         )
 
     def remove_player(self, player_id):
-        # Remove the player from the in-memory selected_players list (like add_player)
         selected_players = self.get_selected_players()
+        print(f"[remove_player][before] For game {self.game_id}: {selected_players}")
         selected_players = [p for p in selected_players if p['user'] != player_id]
+        print(f"[remove_player][after remove] For game {self.game_id}: {selected_players}")
         self.set_selected_players(selected_players)
         player_count = sum(len(p['card']) if isinstance(p['card'], list) else 1 for p in selected_players)
         self.set_player_count(player_count)
