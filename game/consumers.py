@@ -76,29 +76,6 @@ class GameConsumer(WebsocketConsumer):
                 self.close()
                 return
     
-            # ❌ Reject if game is Started but >30s passed
-            if game.played == 'Started':
-                elapsed = (timezone.now() - game.started_at).total_seconds()
-                if elapsed > 30:
-                    self.accept()
-                    self.send(text_data=json.dumps({
-                        'type': 'game_expired',
-                        'gameId': self.game_id
-                    }))
-                    self.close()
-                    return
-    
-            # ❌ Reject if game is Playing and user not in list
-            if user and user.is_authenticated:
-                if game.played == 'Playing' and user.id not in user_ids:
-                    self.accept()
-                    self.send(text_data=json.dumps({
-                        'type': 'game_expired',
-                        'gameId': self.game_id
-                    }))
-                    self.close()
-                    return
-    
             # ✅ Passed all checks
             self.accept()
 
