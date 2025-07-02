@@ -12,7 +12,6 @@ class GameConsumer(WebsocketConsumer):
         super().__init__(*args, **kwargs)
         self.redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
         self.game_random_numbers = []
-        self.called_numbers = []
         self.lock = threading.Lock()
         self.active_games = {}
         self.selected_cards = []
@@ -77,7 +76,7 @@ class GameConsumer(WebsocketConsumer):
             if game.played == 'Playing':
                 self.send(text_data=json.dumps({
                     'type': 'called_numbers',
-                    'called_numbers': self.called_numbers
+                    'called_numbers': self.get_game_state("called_numbers") or []
                 }))
             
             if game.played == 'Started':
@@ -360,9 +359,14 @@ class GameConsumer(WebsocketConsumer):
                         'random_number': num
                     }
                 )
-                self.called_numbers.append(num)
 
-            # Wait for a few seconds before sending the next number
+                # ✅ Store in Redis
+                called = self.get_game_state("called_numbers") or []
+                if not isinstance(called, list):
+                    called = []
+                called.append(num)
+                self.set_game_state("called_numbers", called)
+
             time.sleep(5)
 
         # Close the game after all numbers are sent
@@ -462,7 +466,7 @@ class GameConsumer(WebsocketConsumer):
             return 
         
         # Include a zero at the end of the called numbers (for "free space" if applicable)
-        if not set(calledNumbers).issubset(self.called_numbers):
+        if not set(calledNumbers).issubset(self.get_game_state("called_numbers") or []):
             print("Called numbers do not match the game's called numbers.")
             return
         
