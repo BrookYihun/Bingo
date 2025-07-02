@@ -66,30 +66,42 @@ class GameConsumer(WebsocketConsumer):
         try:
             game = Game.objects.get(id=int(self.game_id))
             
-            # Check if the game is already closed
+            ## ❌ Reject if game is closed
             if game.played == 'closed':
+                self.accept()
+                self.send(text_data=json.dumps({
+                    'type': 'game_expired',
+                    'gameId': self.game_id
+                }))
                 self.close()
                 return
-                
-            # ❌ Reject if game is "Started" but more than 30 seconds passed
+    
+            # ❌ Reject if game is Started but >30s passed
             if game.played == 'Started':
                 elapsed = (timezone.now() - game.started_at).total_seconds()
                 if elapsed > 30:
-                    self.close()
-                    return
-
-            # ❌ Reject if game is "Playing" and user not in selected players
-            user = self.scope.get("user")
-            print(user)
-            if user and user.is_authenticated:
-                selected_players = self.get_selected_players()
-                user_ids = [p["user"] for p in selected_players]
-                if game.played == 'Playing' and user.id not in user_ids:
+                    self.accept()
+                    self.send(text_data=json.dumps({
+                        'type': 'game_expired',
+                        'gameId': self.game_id
+                    }))
                     self.close()
                     return
     
+            # ❌ Reject if game is Playing and user not in list
+            if user and user.is_authenticated:
+                if game.played == 'Playing' and user.id not in user_ids:
+                    self.accept()
+                    self.send(text_data=json.dumps({
+                        'type': 'game_expired',
+                        'gameId': self.game_id
+                    }))
+                    self.close()
+                    return
+    
+            # ✅ Passed all checks
             self.accept()
-            
+
             if game.played == 'Playing':
                 self.send(text_data=json.dumps({
                     'type': 'called_numbers',
