@@ -86,6 +86,16 @@ class GameConsumer(WebsocketConsumer):
                 }))
             
             if game.played == 'Started':
+
+                if self.get_player_count() == 0:
+                    # If no players, reset game state
+                    game.played = 'Created'
+                    game.started_at = None
+                    game.save()
+                    self.set_game_state("is_running", False)
+                    self.set_game_state("bingo", False)
+                    return
+
                 start_delay = 29
                 start_time_with_delay = game.started_at + timezone.timedelta(seconds=start_delay)
 
@@ -756,7 +766,6 @@ class GameConsumer(WebsocketConsumer):
             game.save()
             self.set_game_state("is_running",False)
             self.set_game_state("bingo",False)
-
 
         # Broadcast the updated player list over the socket
         async_to_sync(self.channel_layer.group_send)(
