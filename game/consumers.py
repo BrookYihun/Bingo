@@ -452,6 +452,8 @@ class GameConsumer(WebsocketConsumer):
                     yield item
 
         user_cards = list(flatten(player_cards))
+
+        print(f"Checking Bingo for user {user_id} with cards: {user_cards}")
         
         if game.winner != 0:
             return
@@ -461,6 +463,7 @@ class GameConsumer(WebsocketConsumer):
         
         # Include a zero at the end of the called numbers (for "free space" if applicable)
         if not set(calledNumbers).issubset(self.called_numbers):
+            print("Called numbers do not match the game's called numbers.")
             return
         
         called_numbers_list = calledNumbers + [0]
@@ -481,10 +484,12 @@ class GameConsumer(WebsocketConsumer):
         # Fetch the Card objects
         cards = Card.objects.filter(id__in=user_cards)
 
+        print(f"Cards for user {user_id}: {[card.id for card in cards]}")
+
         # Loop through all the cards assigned to the user
         for card in cards:
             numbers = json.loads(card.numbers)
-            
+            print(f"Checking card {card.id} for user {user_id} with numbers: {numbers}")
             # Check if this card has a Bingo with the called numbers
             winning_numbers = self.has_bingo(numbers, called_numbers_list)
             
