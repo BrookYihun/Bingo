@@ -297,7 +297,7 @@ class GameConsumer(WebsocketConsumer):
         selected_players = self.get_selected_players()
         players = selected_players
         print(f"Selected players: {players}")
-        total_cards = sum(len(sublist) for player in players for sublist in player["card"])
+        total_cards = sum(len(player["card"]) for player in players)
         game.numberofplayers = int(total_cards)
         winner_price = total_cards * int(game.stake)
         if winner_price >= 100:
