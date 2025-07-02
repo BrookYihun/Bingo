@@ -351,6 +351,17 @@ class GameConsumer(WebsocketConsumer):
         game.playerCard = json.dumps(updated_player_cards)
         game.save()
 
+        async_to_sync(self.channel_layer.group_send)(
+            self.room_group_name,
+            {
+                'type': 'game_stats',
+                'number_of_players': self.get_player_count(),
+                'stake': game.stake,
+                'winner_price': game.winner_price,
+                'bonus': game.bonus,
+            }
+        )
+
         # Send each number only once
         for num in self.game_random_numbers:
             is_running = self.get_game_state("is_running")
@@ -781,4 +792,18 @@ class GameConsumer(WebsocketConsumer):
             'type': 'game_stat',
             'number_of_players': number_of_players,
             'stake': stake
+        }))
+    
+    def game_stats(self, event):
+        number_of_players = event['number_of_players']
+        stake = event['stake']
+        winner_price = event['winner_price']
+        bonus = event['bonus']
+        # Send the updated player list to WebSocket clients
+        self.send(text_data=json.dumps({
+            'type': 'game_stats',
+            'number_of_players': number_of_players,
+            'stake': stake,
+            'winner_price': winner_price,
+            'bonus': bonus
         }))
