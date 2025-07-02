@@ -638,10 +638,12 @@ class GameConsumer(WebsocketConsumer):
         selected_players = self.get_selected_players()
         print(f"[add_player][before] For game {self.game_id}: {selected_players}")
         # Remove any existing entry for this user
+        # ✅ Remove any existing entry for this user
         selected_players = [p for p in selected_players if p['user'] != player_id]
 
-        # Add the new player with their card
-        selected_players.append({'user': player_id, 'card': [card_id]})
+        # ✅ Add only the latest card (overwrite previous ones)
+        card_ids = card_id if isinstance(card_id, list) else [card_id]
+        selected_players.append({'user': player_id, 'card': card_ids})
         print(f"[add_player][after append] For game {self.game_id}: {selected_players}")
         self.set_selected_players(selected_players)
 
