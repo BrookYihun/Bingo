@@ -443,6 +443,16 @@ class GameConsumer(WebsocketConsumer):
             }))
             return
         
+        # Flatten it safely
+        def flatten(lst):
+            for item in lst:
+                if isinstance(item, list):
+                    yield from flatten(item)
+                else:
+                    yield item
+
+        user_cards = list(flatten(player_cards))
+        
         if game.winner != 0:
             return
         
@@ -467,13 +477,6 @@ class GameConsumer(WebsocketConsumer):
                 else:
                     flattened.append(int(card))
             return flattened
-        
-        # Find and flatten all card IDs for the specified user
-        user_cards = []
-        for player in players:
-            if player['user'] == int(user_id):
-                # Flatten card IDs for this player
-                user_cards.extend(flatten_card_ids(player['card'] if isinstance(player['card'], list) else [player['card']]))
 
         # Fetch the Card objects
         cards = Card.objects.filter(id__in=user_cards)
