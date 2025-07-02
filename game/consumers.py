@@ -70,7 +70,24 @@ class GameConsumer(WebsocketConsumer):
             if game.played == 'closed':
                 self.close()
                 return
+                
+            # ❌ Reject if game is "Started" but more than 30 seconds passed
+            if game.played == 'Started':
+                elapsed = (timezone.now() - game.started_at).total_seconds()
+                if elapsed > 30:
+                    self.close()
+                    return
 
+            # ❌ Reject if game is "Playing" and user not in selected players
+            user = self.scope.get("user")
+            print(user)
+            if user and user.is_authenticated:
+                selected_players = self.get_selected_players()
+                user_ids = [p["user"] for p in selected_players]
+                if game.played == 'Playing' and user.id not in user_ids:
+                    self.close()
+                    return
+    
             self.accept()
             
             if game.played == 'Playing':
