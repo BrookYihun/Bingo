@@ -101,7 +101,7 @@ class GameConsumer(WebsocketConsumer):
                 }))
 
                 self.send(text_data=json.dumps({
-                    'type': 'update_player_list',
+                    'type': 'player_list',
                     'player_list': self.get_selected_players()
                 }))
             self.game_random_numbers = json.loads(game.random_numbers)
