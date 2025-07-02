@@ -88,12 +88,22 @@ class GameConsumer(WebsocketConsumer):
                 now = timezone.now()
                 remaining = (start_time_with_delay - now).total_seconds()
                 remaining_seconds = max(int(remaining), 0)  # Make sure it's not negative
+
+                # If already started and remaining_seconds is negative, do not connect
+                if remaining < 0:
+                    self.close()
+                    return
+
                 self.send(text_data=json.dumps({
                     'type': 'timer_message',
                     'remaining_seconds': remaining_seconds,
                     'message': str(game.started_at),
                 }))
-                            
+
+                self.send(text_data=json.dumps({
+                    'type': 'update_player_list',
+                    'player_list': self.get_selected_players()
+                }))
             self.game_random_numbers = json.loads(game.random_numbers)
             
             bingo = self.get_game_state("bingo")
@@ -239,6 +249,7 @@ class GameConsumer(WebsocketConsumer):
                 "cards": bingo_table_data
             }))
             return
+        
 
     def send_random_numbers_periodically(self):
         from game.models import Game
