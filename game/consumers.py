@@ -117,6 +117,13 @@ class GameConsumer(WebsocketConsumer):
                 self.room_group_name,
                 self.channel_name
             )
+
+            self.send(text_data=json.dumps({
+                'type': 'game_stat',
+                'number_of_players': self.get_player_count(),
+                'stake': game.stake,
+            }))
+
         except Game.DoesNotExist:
             # If the game does not exist, close the connection
             self.close()
@@ -714,6 +721,8 @@ class GameConsumer(WebsocketConsumer):
         )
 
     def remove_player(self, player_id):
+        from game.models import Game
+        game = Game.objects.get(id=int(self.game_id))
         selected_players = self.get_selected_players()
         print(f"[remove_player][before] For game {self.game_id}: {selected_players}")
         selected_players = [p for p in selected_players if p['user'] != player_id]
@@ -728,6 +737,15 @@ class GameConsumer(WebsocketConsumer):
             {
                 'type': 'update_player_list',
                 'player_list': self.get_selected_players()
+            }
+        )
+
+        async_to_sync(self.channel_layer.group_send)(
+            self.room_group_name,
+            {
+                'type': 'game_stat',
+                'number_of_players': self.get_player_count(),
+                'stake': game.stake or 0,
             }
         )
 
