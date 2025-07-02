@@ -704,6 +704,15 @@ class GameConsumer(WebsocketConsumer):
             }
         )
 
+        async_to_sync(self.channel_layer.group_send)(
+            self.room_group_name,
+            {
+                'type': 'game_stat',
+                'number_of_players': self.get_player_count(),
+                'stake': game.stake,
+            }
+        )
+
     def remove_player(self, player_id):
         selected_players = self.get_selected_players()
         print(f"[remove_player][before] For game {self.game_id}: {selected_players}")
@@ -744,4 +753,14 @@ class GameConsumer(WebsocketConsumer):
         self.send(text_data=json.dumps({
             'type': 'sucess',
             'message': message
+        }))
+    
+    def game_stat(self, event):
+        number_of_players = event['number_of_players']
+        stake = event['stake']
+        # Send the updated player list to WebSocket clients
+        self.send(text_data=json.dumps({
+            'type': 'game_stat',
+            'number_of_players': number_of_players,
+            'stake': stake
         }))
