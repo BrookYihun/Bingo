@@ -181,22 +181,22 @@ class GameConsumer(WebsocketConsumer):
                     }
                 )
 
-                if not is_running  and self.get_player_count() > 1:
+            if not is_running  and self.get_player_count() > 1:
 
-                    game.started_at = timezone.now()
-                    game.played = 'Started'
-                    game.save()
-                    start_delay = 29
-                    remaining_seconds = start_delay
-                    self.send(text_data=json.dumps({
-                        'type': 'timer_message',
-                        'remaining_seconds': remaining_seconds,
-                        'message': str(game.started_at),
-                    }))
-                    self.set_game_state("is_running",True)
+                game.started_at = timezone.now()
+                game.played = 'Started'
+                game.save()
+                start_delay = 29
+                remaining_seconds = start_delay
+                self.send(text_data=json.dumps({
+                    'type': 'timer_message',
+                    'remaining_seconds': remaining_seconds,
+                    'message': str(game.started_at),
+                }))
+                self.set_game_state("is_running",True)
 
-                    thread = threading.Thread(target=self.send_random_numbers_periodically)
-                    thread.start()
+                thread = threading.Thread(target=self.send_random_numbers_periodically)
+                thread.start()
 
         if data['type']  == 'joined_bingo':
             user_id = data.get("userId")
