@@ -18,7 +18,7 @@ class Group(models.Model):
     is_scheduled = models.BooleanField(default=False)  # whether to start at scheduled time
     scheduled_datetime = models.DateTimeField(blank=True, null=True)
 
-    link = models.CharField(max_length=255, unique=True, null=True, blank=True)
+    group_link = models.CharField(max_length=255, unique=True, null=True, blank=True)
 
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
