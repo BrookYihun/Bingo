@@ -134,17 +134,45 @@ class GameConsumer(WebsocketConsumer):
             active_games = self.get_active_games()
 
             if player_count >= 3 and len(active_games) < 2:
-                # Create a new game
-                game_id = self.increment_game_counter()
-                active_games.append(game_id)
+                from game.models import Game  # ✅ Make sure it's the correct path
+                from django.utils import timezone
+                import random
+                
+                # Build the playerCard map: {user_id: [card_ids]}
+                player_card_map = {
+                    str(p['user']): p['card'] for p in selected_players
+                }
+                
+                # Random numbers to call
+                random_numbers = random.sample(range(1, 91), 90)  # Example: 1 to 90
+                
+                # Calculate number of cards
+                number_of_cards = sum(len(c) for c in player_card_map.values())
+                
+                # Create game in DB
+                new_game = Game.objects.create(
+                    stake=self.stake,
+                    numberofplayers=number_of_cards,
+                    playerCard=player_card_map,
+                    random_numbers={'numbers': random_numbers},
+                    called_numbers={'numbers': []},
+                    winner_price=0,  # Can be updated later
+                    admin_cut=0,     # Can be calculated
+                    created_at=timezone.now(),
+                    started_at=timezone.now(),
+                    played='Started'
+                )
+                
+                # Add game_id to Redis active games
+                active_games.append(new_game.id)
                 self.set_active_games(active_games)
-
-                # Broadcast new game started
+                
+                # Broadcast the game start
                 async_to_sync(self.channel_layer.group_send)(
                     self.room_group_name,
                     {
                         'type': 'game_started',
-                        'game_id': game_id,
+                        'game_id': new_game.id,
                         'player_list': selected_players,
                         'stake': self.stake
                     }
