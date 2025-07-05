@@ -100,7 +100,6 @@ def get_playing_bingo_card(request):
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
 
-
 @permission_classes([IsAuthenticated])
 def generate_random_numbers():
     # Generate a list of numbers from 1 to 75

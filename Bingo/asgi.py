@@ -2,19 +2,20 @@ import os
 from django.core.asgi import get_asgi_application
 from channels.routing import ProtocolTypeRouter, URLRouter
 from game.middleware import JWTAuthMiddleware
-from game.routing import websocket_urlpatterns
+from game.routing import websocket_urlpatterns as game_ws
+from group.routing import websocket_urlpatterns as group_ws
 from django.contrib.staticfiles.handlers import ASGIStaticFilesHandler
 
-# Set the Django settings module
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'Bingo.settings')
 
-# Define the ASGI application
+# Combine all websocket routes
+all_ws_routes = game_ws + group_ws
+
 application = ProtocolTypeRouter({
     "http": get_asgi_application(),
     "websocket": JWTAuthMiddleware(
-        URLRouter(websocket_urlpatterns)
+        URLRouter(all_ws_routes)
     ),
 })
 
-# Handle static files in ASGI
 application = ASGIStaticFilesHandler(application)
