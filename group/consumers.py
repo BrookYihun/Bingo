@@ -4,8 +4,6 @@ from django.utils import timezone
 from channels.generic.websocket import WebsocketConsumer
 from asgiref.sync import async_to_sync
 import redis
-from game.models import Game
-from group.models import GroupGame  # Import your linking model
 
 
 class GroupConsumer(WebsocketConsumer):
@@ -20,6 +18,7 @@ class GroupConsumer(WebsocketConsumer):
         self.room_group_name = f"group_{self.group_id}"
 
         try:
+            from group.models import GroupGame
             group_game = GroupGame.objects.select_related('game').get(group__id=int(self.group_id))
             self.game = group_game.game
             self.game_id = self.game.id  # So you can reuse GameConsumer logic
