@@ -5,232 +5,62 @@ from django.utils import timezone
 from channels.generic.websocket import WebsocketConsumer
 from asgiref.sync import async_to_sync
 import redis
-
+import uuid
 
 class GameConsumer(WebsocketConsumer):
+    redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
+    game_threads_started = set()
+    lock = threading.Lock()
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
-        self.game_random_numbers = []
-        self.lock = threading.Lock()
-        self.active_games = {}
-        self.selected_cards = []
-
-    # --- Shared state helpers ---
-    def get_selected_players(self):
-        data = self.redis_client.get(f"selected_players_{self.game_id}")
-        players = json.loads(data) if data else []
-        print(f"[get_selected_players] For game {self.game_id}: {players}")
-        return players
-
-    def set_selected_players(self, players):
-        print(f"[set_selected_players] For game {self.game_id}: {players}")
-        self.redis_client.set(f"selected_players_{self.game_id}", json.dumps(players))
-
-    def get_player_count(self):
-        count = self.redis_client.get(f"player_count_{self.game_id}")
-        return int(count) if count else 0
-
-    def set_player_count(self, count):
-        self.redis_client.set(f"player_count_{self.game_id}", int(count))
-
-    def get_bingo_page_users(self):
-        data = self.redis_client.get(f"bingo_page_users_{self.game_id}")
-        return set(json.loads(data)) if data else set()
-
-    def set_bingo_page_users(self, users):
-        self.redis_client.set(f"bingo_page_users_{self.game_id}", json.dumps(list(users)))
-
-    def get_game_state(self, key):
-        """
-        Retrieve game state from Redis.
-        """
-        redis_key = f"game_state_{self.game_id}"
-        state = self.redis_client.hget(redis_key, key)
-        if state:
-            return json.loads(state)
-        return None
-
-    def set_game_state(self, key, value):
-        """
-        Save game state to Redis.
-        """
-        redis_key = f"game_state_{self.game_id}"
-        self.redis_client.hset(redis_key, key, json.dumps(value))
 
     def connect(self):
-        self.game_id = self.scope['url_route']['kwargs']['game_id']
-        self.room_group_name = f'game_{self.game_id}'
-        from game.models import Game
-        from django.utils import timezone
-        try:
-            game = Game.objects.get(id=int(self.game_id))
-            
-            ## ❌ Reject if game is closed
-            if game.played == 'closed':
-                self.accept()
-                self.send(text_data=json.dumps({
-                    'type': 'game_expired',
-                    'gameId': self.game_id
-                }))
-                self.close()
-                return
-    
-            # ✅ Passed all checks
-            self.accept()
+        self.stake = self.scope['url_route']['kwargs']['stake']
+        self.room_group_name = f'game_{self.stake}'
+        self.accept()
 
-            if game.played == 'Playing':
-                self.send(text_data=json.dumps({
-                    'type': 'called_numbers',
-                    'called_numbers': self.get_game_state("called_numbers") or []
-                }))
-            
-            if game.played == 'Started':
+        # Join group
+        async_to_sync(self.channel_layer.group_add)(
+            self.room_group_name,
+            self.channel_name
+        )
 
-                if self.get_player_count() == 0:
-                    # If no players, reset game state
-                    game.played = 'Created'
-                    game.started_at = None
-                    game.save()
-                    self.set_game_state("is_running", False)
-                    self.set_game_state("bingo", False)
-                    return
-
-                start_delay = 29
-                start_time_with_delay = game.started_at + timezone.timedelta(seconds=start_delay)
-
-                # Calculate remaining time until actual game start
-                now = timezone.now()
-                remaining = (start_time_with_delay - now).total_seconds()
-                remaining_seconds = max(int(remaining), 0)  # Make sure it's not negative
-
-                # If already started and remaining_seconds is negative, do not connect
-                if remaining < 0:
-                    self.close()
-                    return
-
-                self.send(text_data=json.dumps({
-                    'type': 'timer_message',
-                    'remaining_seconds': remaining_seconds,
-                    'message': str(game.started_at),
-                }))
-
-                self.send(text_data=json.dumps({
-                    'type': 'player_list',
-                    'player_list': self.get_selected_players()
-                }))
-            self.game_random_numbers = json.loads(game.random_numbers)
-            
-            bingo = self.get_game_state("bingo")
-            is_running = self.get_game_state("is_running")
-            if not bingo:
-                self.set_game_state("bingo", False)
-            if not is_running:
-                self.set_game_state("is_running", False)
-            
-            # Join room group
-            async_to_sync(self.channel_layer.group_add)(
-                self.room_group_name,
-                self.channel_name
-            )
-
-            self.send(text_data=json.dumps({
-                'type': 'game_stat',
-                'number_of_players': self.get_player_count(),
-                'stake': game.stake,
-            }))
-
-        except Game.DoesNotExist:
-            # If the game does not exist, close the connection
-            self.close()
+        # Start game scheduler only once per stake
+        with self.lock:
+            if self.stake not in self.game_threads_started:
+                threading.Thread(target=self.auto_game_start_loop, daemon=True).start()
+                self.game_threads_started.add(self.stake)
 
     def disconnect(self, close_code):
-        # Leave room group
         async_to_sync(self.channel_layer.group_discard)(
             self.room_group_name,
             self.channel_name
         )
 
-        user = self.scope.get("user")
-        game_id = self.scope["url_route"]["kwargs"]["game_id"]
-
-        if user and user.is_authenticated:
-            user_id = user.id
-            bingo_page_users = self.get_bingo_page_users()
-            if game_id in bingo_page_users:
-                bingo_page_users.discard(user_id)
-                self.set_bingo_page_users(bingo_page_users)
-                print(f"User {user_id} removed from bingo_page_users for game {game_id}")
-
     def receive(self, text_data):
         data = json.loads(text_data)
-        is_running = self.get_game_state("is_running")
-        bingo = self.get_game_state("bingo")
 
-        if data['type'] == 'game_start':
-            from game.models import Game
-            game = Game.objects.get(id=int(self.game_id))
+        if data['type'] == 'select_number':
+            self.add_player(data['player_id'], data['card_id'])
 
-            if game.played == "Created":
-
-                async_to_sync(self.channel_layer.group_send)(
-                    self.room_group_name,
-                    {
-                        'type': 'game_start',
-                        'message': 'Start Game' 
-                    }
-                )
-
-            if not is_running  and self.get_player_count() > 1:
-
-                game.started_at = timezone.now()
-                game.played = 'Started'
-                game.save()
-                start_delay = 29
-                remaining_seconds = start_delay
-                self.send(text_data=json.dumps({
-                    'type': 'timer_message',
-                    'remaining_seconds': remaining_seconds,
-                    'message': str(game.started_at),
-                }))
-                self.set_game_state("is_running",True)
-
-                thread = threading.Thread(target=self.send_random_numbers_periodically)
-                thread.start()
+        if data['type'] == 'remove_number':
+            self.remove_player(data['userId'])
 
         if data['type']  == 'joined_bingo':
             user_id = data.get("userId")
             bingo_page_users = self.get_bingo_page_users()
             bingo_page_users.add(user_id)
             self.set_bingo_page_users(bingo_page_users)
-            print(f"User {user_id} joined bingo page for game {self.game_id}")
-
-        if data['type']  == 'remove_number':
-            user_id = data.get("userId")
-            bingo_page_users = self.get_bingo_page_users()
-            bingo_page_users.discard(user_id)
-            self.set_bingo_page_users(bingo_page_users)
-            self.remove_player(user_id)
-            print(f"User {user_id} left bingo page for game {self.game_id}")
-
-
+            print(f"User {user_id} joined bingo page for game")
+        
         if data['type'] == 'bingo':
-            async_to_sync(self.checkBingo(int(data['userId']), data['calledNumbers']))
-            bingo = self.get_game_state("bingo")
+            async_to_sync(self.checkBingo(int(data['userId']), data['calledNumbers'], data['gameId']))
+            bingo = self.get_game_state("bingo", game_id=data['gameId'])
             if bingo:
-                self.set_game_state("is_running",False)
+                self.set_game_state("is_running",False, game_id=data['gameId'])
                 if self.game_id in self.active_games:
-                    del self.active_games[self.game_id]
-                # self.close()  # Disconnect the WebSocket after a bingo
-            # else:
-            #     self.send(text_data=json.dumps({
-            #         'type': 'no_bingo',
-            #         'message': 'No Bingo! Please check your numbers and try again.'
-            #     }))
-                # self.block(int(data['userId']))
-
-        if data['type'] == 'select_number':
-            self.add_player(data['player_id'], data['card_id'])
+                    del self.active_games[data['game_id']]
         
         if data['type'] == 'card_data':
             from game.models import Card, Game
@@ -272,22 +102,181 @@ class GameConsumer(WebsocketConsumer):
                 "cards": bingo_table_data
             }))
             return
-        
 
-    def send_random_numbers_periodically(self):
-        from game.models import Game
+    # --- Redis state helpers ---
+    def get_selected_players(self):
+        key = f"selected_players_{self.stake}"
+        data = self.redis_client.get(key)
+        return json.loads(data) if data else []
+
+    def set_selected_players(self, players):
+        key = f"selected_players_{self.stake}"
+        self.redis_client.set(key, json.dumps(players))
+
+    def get_player_count(self):
+        return int(self.redis_client.get(f"player_count_{self.stake}") or 0)
+
+    def set_player_count(self, count):
+        self.redis_client.set(f"player_count_{self.stake}", count)
+
+    def get_active_games(self):
+        key = f"active_games_{self.stake}"
+        data = self.redis_client.get(key)
+        return json.loads(data) if data else []
+
+    def set_active_games(self, game_ids):
+        key = f"active_games_{self.stake}"
+        self.redis_client.set(key, json.dumps(game_ids))
+
+    def increment_game_counter(self):
+        return self.redis_client.incr(f"game_counter_{self.stake}")
+    
+    def get_game_state(self, key, game_id=None):
+        game_id = game_id or self.game_id
+        val = self.redis_client.get(f"game_state_{game_id}_{key}")
+        return json.loads(val) if val else None
+
+    def set_game_state(self, key, value, game_id=None):
+        game_id = game_id or self.game_id
+        self.redis_client.set(f"game_state_{game_id}_{key}", json.dumps(value))
+    
+    def get_bingo_page_users(self):
+        data = self.redis_client.get(f"bingo_page_users_{self.game_id}")
+        return set(json.loads(data)) if data else set()
+
+    def set_bingo_page_users(self, users):
+        self.redis_client.set(f"bingo_page_users_{self.game_id}", json.dumps(list(users)))
+
+
+    # --- Player management ---
+    def add_player(self, player_id, card_id):
+        from custom_auth.models import User
+        from decimal import Decimal
+
+        selected_players = self.get_selected_players()
+        selected_players = [p for p in selected_players if p['user'] != player_id]
+        card_ids = card_id if isinstance(card_id, list) else [card_id]
+        selected_players.append({'user': player_id, 'card': card_ids})
+        self.set_selected_players(selected_players)
+
+        player_count = sum(len(p['card']) for p in selected_players)
+        self.set_player_count(player_count)
+
+        user = User.objects.get(id=player_id)
+        if user.wallet < Decimal(self.stake) * len(card_ids):
+            async_to_sync(self.channel_layer.send)(
+                self.channel_name,
+                {
+                    'type': 'error',
+                    'message': 'Insufficient balance to join the game.'
+                }
+            )
+            return
+
+        self.broadcast_player_list()
+
+    def remove_player(self, player_id):
+        selected_players = [p for p in self.get_selected_players() if p['user'] != player_id]
+        self.set_selected_players(selected_players)
+        self.set_player_count(sum(len(p['card']) for p in selected_players))
+        self.broadcast_player_list()
+
+    def broadcast_player_list(self):
+        async_to_sync(self.channel_layer.group_send)(
+            self.room_group_name,
+            {
+                'type': 'update_player_list',
+                'player_list': self.get_selected_players()
+            }
+        )
+        async_to_sync(self.channel_layer.group_send)(
+            self.room_group_name,
+            {
+                'type': 'game_stat',
+                'number_of_players': self.get_player_count(),
+                'stake': self.stake
+            }
+        )
+
+    # --- Automatic Game Loop ---
+    def auto_game_start_loop(self):
+        while True:
+            time.sleep(30)
+            selected_players = self.get_selected_players()
+            player_count = self.get_player_count()
+            active_games = self.get_active_games()
+
+            if player_count >= 3 and len(active_games) < 2:
+                from game.models import Game  # ✅ Make sure it's the correct path
+                from django.utils import timezone
+                import random
+                
+                # Build the playerCard map: {user_id: [card_ids]}
+                player_card_map = {
+                    str(p['user']): p['card'] for p in selected_players
+                }
+                
+                # Random numbers to call
+                random_numbers = random.sample(range(1, 91), 90)  # Example: 1 to 90
+                
+                # Calculate number of cards
+                number_of_cards = sum(len(c) for c in player_card_map.values())
+                
+                # Create game in DB
+                new_game = Game.objects.create(
+                    stake=self.stake,
+                    numberofplayers=number_of_cards,
+                    playerCard=player_card_map,
+                    random_numbers={'numbers': random_numbers},
+                    called_numbers={'numbers': []},
+                    winner_price=0,  # Can be updated later
+                    admin_cut=0,     # Can be calculated
+                    created_at=timezone.now(),
+                    started_at=timezone.now(),
+                    played='Started'
+                )
+                
+                # Add game_id to Redis active games
+                active_games.append(new_game.id)
+                self.set_active_games(active_games)
+                
+                # Broadcast the game start
+                async_to_sync(self.channel_layer.group_send)(
+                    self.room_group_name,
+                    {
+                        'type': 'game_started',
+                        'game_id': new_game.id,
+                        'player_list': selected_players,
+                        'stake': self.stake
+                    }
+                )
+
+                threading.Thread(
+                    target=self.start_game_with_random_numbers,
+                    args=(new_game, selected_players),
+                    daemon=True
+                ).start()
+
+                # Reset players for new cycle
+                self.set_selected_players([])
+                self.set_player_count(0)
+    
+    def start_game_with_random_numbers(self, game, selected_players):
+        from custom_auth.models import User
+        from decimal import Decimal
+        import random
         import json
 
-        is_running = self.get_game_state("is_running")
-        game = Game.objects.get(id=self.game_id)       
+        # Add helper attribute
+        self.game_id = game.id
+        self.room_group_name = f"game_room_{game.id}"
+        self.set_game_state("is_running", True)
 
-        start_delay = 29
+        # Timer before start
+        start_delay = 30
         start_time_with_delay = game.started_at + timezone.timedelta(seconds=start_delay)
-
-        # Calculate remaining time until actual game start
-        now = timezone.now()
-        remaining = (start_time_with_delay - now).total_seconds()
-        remaining_seconds = max(int(remaining), 0)  # Make sure it's not negative
+        remaining = (start_time_with_delay - timezone.now()).total_seconds()
+        remaining_seconds = max(int(remaining), 0)
 
         async_to_sync(self.channel_layer.group_send)(
             self.room_group_name,
@@ -298,8 +287,7 @@ class GameConsumer(WebsocketConsumer):
             }
         )
 
-        # Wait 65 seconds before switching state
-        time.sleep(30)
+        time.sleep(start_delay)  # Wait for 30 seconds
         game.played = 'Playing'
         game.save()
 
@@ -307,164 +295,97 @@ class GameConsumer(WebsocketConsumer):
             self.room_group_name,
             {
                 'type': 'playing',
-                'message': 'game is now playing' 
+                'message': 'Game is now playing'
             }
         )
 
-        from decimal import Decimal
-        from custom_auth.models import User
-        import json
-
-        # Get game and stake
+        # Deduct balance only from players in bingo page
         stake_amount = Decimal(game.stake)
-        selected_players = self.get_selected_players()
-        players = selected_players
-        print(f"Selected players: {players}")
-        total_cards = sum(len(player["card"]) for player in players)
-        game.numberofplayers = int(total_cards)
-        winner_price = total_cards * int(game.stake)
-        if winner_price >= 100:
-            admin_cut = winner_price * 0.2
-            winner_price = winner_price - admin_cut
-            game.admin_cut = admin_cut
-        game.winner_price = winner_price
-
-        bingo_page_users = self.get_bingo_page_users()
-
-        bingo_users = bingo_page_users
         updated_player_cards = []
+        total_cards = sum(len(player["card"]) for player in selected_players)
+        bingo_users = self.get_bingo_page_users()  # Your existing method
 
-        for entry in players:
+        for entry in selected_players:
             try:
                 user_id = entry["user"]
                 cards = entry["card"]
-
-                # Flatten cards in case of nested structure
-                flattened_cards = [card_id for sublist in cards for card_id in sublist] if isinstance(cards[0], list) else cards
-                num_cards = len(flattened_cards)
-                total_deduction = stake_amount * num_cards
-
+                flat_cards = [c for sub in cards for c in sub] if isinstance(cards[0], list) else cards
+                total_deduction = stake_amount * len(flat_cards)
                 user = User.objects.get(id=user_id)
 
                 if user_id in bingo_users:
                     if user.wallet >= total_deduction:
                         user.wallet -= total_deduction
                         user.save()
-                        # Add user back to updated list
-                        entry["card"] = flattened_cards  # Ensure card is flat before saving
+                        entry["card"] = flat_cards
                         updated_player_cards.append(entry)
                     else:
                         self.remove_player(user_id)
                 else:
-                    print(f"User {user_id} is not on the bingo page.")
                     self.remove_player(user_id)
-
-            except User.DoesNotExist:
-                print(f"User with id {user_id} not found.")
             except Exception as e:
-                print(f"Error processing deduction: {e}")
+                print(f"[Deduction Error] {e}")
 
-        # Save updated player cards
-        game.playerCard = json.dumps(updated_player_cards)
+        # Update DB
+        game.numberofplayers = len(updated_player_cards)
+        game.playerCard = updated_player_cards
+
+        winner_price = stake_amount * sum(len(p['card']) for p in updated_player_cards)
+        if winner_price >= 100:
+            admin_cut = winner_price * Decimal('0.2')
+            winner_price -= admin_cut
+            game.admin_cut = admin_cut
+        game.winner_price = winner_price
         game.save()
 
         async_to_sync(self.channel_layer.group_send)(
             self.room_group_name,
             {
                 'type': 'game_stats',
-                'number_of_players': self.get_player_count(),
+                'number_of_players': game.numberofplayers,
                 'stake': game.stake,
-                'winner_price': game.winner_price,
-                'bonus': game.bonus,
+                'winner_price': float(game.winner_price),
+                'bonus': game.bonus
             }
         )
 
-        # Send each number only once
-        for num in self.game_random_numbers:
-            is_running = self.get_game_state("is_running")
-            if not is_running:
+        # Now send random numbers every 5 seconds
+        called = []
+        for num in game.random_numbers.get("numbers", []):
+            if not self.get_game_state("is_running"):
                 break
 
-            with self.lock:
-                # Send the random number to all players in the group only once
-                async_to_sync(self.channel_layer.group_send)(
-                    self.room_group_name,
-                    {
-                        'type': 'random_number',
-                        'random_number': num
-                    }
-                )
+            async_to_sync(self.channel_layer.group_send)(
+                self.room_group_name,
+                {
+                    'type': 'random_number',
+                    'random_number': num
+                }
+            )
 
-                # ✅ Store in Redis
-                called = self.get_game_state("called_numbers") or []
-                if not isinstance(called, list):
-                    called = []
-                called.append(num)
-                self.set_game_state("called_numbers", called)
+            called.append(num)
+            self.set_game_state("called_numbers", called)
 
             time.sleep(5)
 
-        # Close the game after all numbers are sent
+        # Finish
         time.sleep(10)
         game.played = 'closed'
         game.save()
-        self.set_game_state("is_running",False)
+        self.set_game_state("is_running", False)
 
-        # Remove from active games and disconnect the consumer
-        if self.game_id in self.active_games:
-            del self.active_games[self.game_id]
-        self.close()  # Disconnect the WebSocket after sending all numbers
+        active_games = self.get_active_games()
+        if self.game_id in active_games:
+            active_games.remove(self.game_id)
+            self.set_active_games(active_games)
 
+        self.close()
 
-    def random_number(self, event):
-        """Handles individual random number events received from group_send."""
-        random_number = event['random_number']
-        self.send(text_data=json.dumps({
-            'type': 'random_number',
-            'random_number': random_number
-        }))
-
-    def game_start(self, event):
-        message = event['message']
-        self.send(text_data=json.dumps({
-            'type': 'game_start',
-            'message': message
-        }))
-
-    def playing(self, event):
-        message = event['message']
-        self.send(text_data=json.dumps({
-            'type': 'playing',
-            'message': message
-        }))
-
-    def timer_message(self, event):
-        message = event['message']
-        self.send(text_data=json.dumps({
-            'type': 'timer_message',
-            'remaining_seconds': event['remaining_seconds'],
-            'message': message
-        }))
-
-    def result(self, event):
-        result = event['data']
-        self.send(text_data=json.dumps({
-            'type': 'result',
-            'data': result
-        }))
-
-    def selected_numbers(self, event):
-        selected_numbers = event['selected_numbers']
-        self.send(text_data=json.dumps({
-            'type': 'selected_numbers',
-            'selected_numbers': selected_numbers
-        }))
-
-    def checkBingo(self, user_id, calledNumbers):
+    def checkBingo(self, user_id, calledNumbers, game_id):
         from game.models import Card, Game
         from custom_auth.models import User
         
-        game = Game.objects.get(id=int(self.game_id))
+        game = Game.objects.get(id=int(game_id))
         result = []
         
         # Retrieve player's cards based on the provided user_id
@@ -579,7 +500,6 @@ class GameConsumer(WebsocketConsumer):
             'data': result
         }))
 
-
     def has_bingo(self, card, called_numbers):
         winning_columns = 0
         corner_count = 0
@@ -622,213 +542,30 @@ class GameConsumer(WebsocketConsumer):
 
         return winning_numbers
 
-    def block(self, user_id):
-        from game.models import Game
-        last_game = Game.objects.get(id=self.game_id)
-        players = json.loads(last_game.playerCard)
-        updated_list = [item for item in players if int(item['user']) != user_id]
-        last_game.playerCard = json.dumps(updated_list)
-        last_game.numberofplayers = len(updated_list)
-        last_game.save()
-
-    def add_player(self, player_id, card_id):
-        from game.models import Game
-        from custom_auth.models import User
-        from decimal import Decimal
-        from django.utils import timezone
-        from django.db.models import Q
-
-        game = Game.objects.get(id=int(self.game_id))
-        
-        now = timezone.now()
-    
-        # Step 1: Get games with specific statuses
-        active_games_qs = Game.objects.filter(played__in=['Started', 'Created', 'Playing'])
-
-        # Step 2: Define expiration conditions for each status
-        expired_games = active_games_qs.filter(
-            Q(played='Created', started_at__lt=now - timezone.timedelta(seconds=30)) |
-            Q(played='Started', started_at__lt=now - timezone.timedelta(seconds=30)) |
-            Q(played='Playing') & (Q(started_at__lt=now - timezone.timedelta(seconds=375)))
-        )
-        
-        # Step 3: Update expired games to 'closed'
-        expired_games.update(played='closed')
-
-        # ✅ Check for multiple active games with the same stake (only 'playing', not Closed)
-        active_games_with_same_stake = Game.objects.filter(
-            stake=game.stake,
-            played='Playing',
-            numberofplayers__gt=2
-        ).exclude(id=game.id).count()
-
-        if active_games_with_same_stake > 2:
-            async_to_sync(self.channel_layer.send)(
-                self.channel_name,
-                {
-                    'type': 'error',
-                    'message': 'Please wait: Maximum number of active games for this stake is reached.'
-                }
-            )
-            return  # ❌ Do not proceed further
-
-        # ❗Only allow joining if the game is not "playing"
-        if game.played == "playing":
-            async_to_sync(self.channel_layer.send)(
-                self.channel_name,
-                {
-                    'type': 'error',
-                    'message': 'Cannot join: The game is already in progress.'
-                }
-            )
-            return
-        selected_players = self.get_selected_players()
-        print(f"[add_player][before] For game {self.game_id}: {selected_players}")
-        # Remove any existing entry for this user
-        # ✅ Remove any existing entry for this user
-        selected_players = [p for p in selected_players if p['user'] != player_id]
-
-        # ✅ Add only the latest card (overwrite previous ones)
-        card_ids = card_id if isinstance(card_id, list) else [card_id]
-        selected_players.append({'user': player_id, 'card': card_ids})
-        print(f"[add_player][after append] For game {self.game_id}: {selected_players}")
-        self.set_selected_players(selected_players)
-
-        # Update player count in Redis
-        player_count = sum(len(p['card']) if isinstance(p['card'], list) else 1 for p in selected_players)
-        self.set_player_count(player_count)
-        
-        # ✅ Balance Check
-        user = User.objects.get(id=player_id)
-        card_list = card_id if isinstance(card_id, list) else [card_id]
-        total_cost = Decimal(game.stake) * len(card_list)
-
-        if user.wallet < total_cost:
-            async_to_sync(self.channel_layer.send)(
-                self.channel_name,
-                {
-                    'type': 'error',
-                    'message': 'Insufficient balance to join the game.'
-                }
-            )
-            return
-
-        # Optional wallet deduction (currently commented out)
-        # user.wallet -= total_cost
-        # user.save()
-
-        # # ✅ Save game updates
-        # game.playerCard = json.dumps(players)
-        # game.numberofplayers = sum(len(p['card']) if isinstance(p['card'], list) else 1 for p in players)
-        # game.save()
-
-        async_to_sync(self.channel_layer.send)(
-            self.channel_name,
-            {
-                'type': 'sucess',
-                'message': 'Game will start soon'
-            }
-        )
-
-        # Broadcast the updated player list over the socket
-        async_to_sync(self.channel_layer.group_send)(
-            self.room_group_name,
-            {
-                'type': 'update_player_list',
-                'player_list': self.get_selected_players()
-            }
-        )
-
-        async_to_sync(self.channel_layer.group_send)(
-            self.room_group_name,
-            {
-                'type': 'game_stat',
-                'number_of_players': self.get_player_count(),
-                'stake': game.stake,
-            }
-        )
-
-    def remove_player(self, player_id):
-        from game.models import Game
-        game = Game.objects.get(id=int(self.game_id))
-        selected_players = self.get_selected_players()
-        print(f"[remove_player][before] For game {self.game_id}: {selected_players}")
-        selected_players = [p for p in selected_players if p['user'] != player_id]
-        print(f"[remove_player][after remove] For game {self.game_id}: {selected_players}")
-        self.set_selected_players(selected_players)
-        player_count = sum(len(p['card']) if isinstance(p['card'], list) else 1 for p in selected_players)
-        self.set_player_count(player_count)
-
-        if player_count == 0:
-            # If no players left, close the game
-            game.played = 'Created'
-            game.started_at = None
-            game.save()
-            self.set_game_state("is_running",False)
-            self.set_game_state("bingo",False)
-
-        # Broadcast the updated player list over the socket
-        async_to_sync(self.channel_layer.group_send)(
-            self.room_group_name,
-            {
-                'type': 'update_player_list',
-                'player_list': self.get_selected_players()
-            }
-        )
-
-        async_to_sync(self.channel_layer.group_send)(
-            self.room_group_name,
-            {
-                'type': 'game_stat',
-                'number_of_players': self.get_player_count(),
-                'stake': game.stake or 0,
-            }
-        )
-
+    # --- WebSocket Handlers ---
     def update_player_list(self, event):
-        player_list = event['player_list']
-        # Send the updated player list to WebSocket clients
         self.send(text_data=json.dumps({
             'type': 'player_list',
-            'player_list': player_list
+            'player_list': event['player_list']
+        }))
+
+    def game_stat(self, event):
+        self.send(text_data=json.dumps({
+            'type': 'game_stat',
+            'number_of_players': event['number_of_players'],
+            'stake': event['stake']
+        }))
+
+    def game_started(self, event):
+        self.send(text_data=json.dumps({
+            'type': 'game_started',
+            'game_id': event['game_id'],
+            'player_list': event['player_list'],
+            'stake': event['stake']
         }))
 
     def error(self, event):
-        message = event['message']
-        # Send the updated player list to WebSocket clients
         self.send(text_data=json.dumps({
             'type': 'error',
-            'message': message
-        }))
-    
-    def sucess(self, event):
-        message = event['message']
-        # Send the updated player list to WebSocket clients
-        self.send(text_data=json.dumps({
-            'type': 'sucess',
-            'message': message
-        }))
-    
-    def game_stat(self, event):
-        number_of_players = event['number_of_players']
-        stake = event['stake']
-        # Send the updated player list to WebSocket clients
-        self.send(text_data=json.dumps({
-            'type': 'game_stat',
-            'number_of_players': number_of_players,
-            'stake': stake
-        }))
-    
-    def game_stats(self, event):
-        number_of_players = event['number_of_players']
-        stake = event['stake']
-        winner_price = event['winner_price']
-        bonus = event['bonus']
-        # Send the updated player list to WebSocket clients
-        self.send(text_data=json.dumps({
-            'type': 'game_stats',
-            'number_of_players': number_of_players,
-            'stake': stake,
-            'winner_price': winner_price,
-            'bonus': bonus
+            'message': event['message']
         }))
