@@ -16,16 +16,10 @@ class GameConsumer(WebsocketConsumer):
         super().__init__(*args, **kwargs)
 
     def connect(self):
-        print("📦 Scope dump on connect:")
-        for key, value in self.scope.items():
-            print(f"  {key}: {value}")
         self.stake = self.scope['url_route']['kwargs']['stake']
         print(f"Connecting to game with stake: {self.stake}")
         self.room_group_name = f'game_{self.stake}'
         self.accept()
-
-        print(f"Connecting to game room: {self.room_group_name}")
-        print(f"Stake: {self.stake}")
 
         # Join group
         async_to_sync(self.channel_layer.group_add)(
