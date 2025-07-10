@@ -26,7 +26,7 @@ class GameConsumer(WebsocketConsumer):
             self.room_group_name,
             self.channel_name
         )
-
+        print("accept")
         # Start game scheduler only once per stake
         with self.lock:
             if self.stake not in self.game_threads_started:
