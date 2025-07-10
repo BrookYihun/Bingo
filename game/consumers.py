@@ -66,9 +66,7 @@ class GameConsumer(WebsocketConsumer):
                     del self.active_games[data['game_id']]
         
         if data['type'] == 'card_data':
-            from game.models import Card, Game
-            game_id = int(self.game_id)
-            game = Game.objects.get(id=game_id)
+            from game.models import Card
             
             user_cards = []
             selected_players = self.get_selected_players()
