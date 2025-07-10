@@ -140,14 +140,21 @@ class GameConsumer(WebsocketConsumer):
     def increment_game_counter(self):
         return self.redis_client.incr(f"game_counter_{self.stake}")
     
-    def get_game_state(self, key, game_id=None):
-        game_id = game_id or self.game_id
+    def get_game_state(self, key, game_id):
+        game_id = game_id
         val = self.redis_client.get(f"game_state_{game_id}_{key}")
         return json.loads(val) if val else None
 
-    def set_game_state(self, key, value, game_id=None):
-        game_id = game_id or self.game_id
+    def set_game_state(self, key, value, game_id):
+        game_id = game_id
         self.redis_client.set(f"game_state_{game_id}_{key}", json.dumps(value))
+    
+    def get_stake_state(self, key):
+        val = self.redis_client.get(f"stake_state_{self.stake}_{key}")
+        return json.loads(val) if val else None
+    
+    def set_stake_state(self, key, value):
+        self.redis_client.set(f"stake_state_{self.stake}_{key}", json.dumps(value))
     
     def get_bingo_page_users(self):
         data = self.redis_client.get(f"bingo_page_users_{self.game_id}")
@@ -273,7 +280,7 @@ class GameConsumer(WebsocketConsumer):
                 self.set_game_state("next_game_start", timezone.now().timestamp() + 30)  # 30s buffer until next check
             
     def get_remaining_time(self):
-        next_start_ts = self.get_game_state("next_game_start")
+        next_start_ts = self.get_stake_state("next_game_start")
         if not next_start_ts:
             return 0
         now = time.time()
@@ -372,7 +379,7 @@ class GameConsumer(WebsocketConsumer):
         # Now send random numbers every 5 seconds
         called = []
         for num in game.random_numbers.get("numbers", []):
-            if not self.get_game_state("is_running"):
+            if not self.get_game_state("is_running",game.id):
                 break
 
             async_to_sync(self.channel_layer.group_send)(
@@ -442,7 +449,7 @@ class GameConsumer(WebsocketConsumer):
             return 
         
         # Include a zero at the end of the called numbers (for "free space" if applicable)
-        if not set(calledNumbers).issubset(self.get_game_state("called_numbers") or []):
+        if not set(calledNumbers).issubset(self.get_game_state("called_numbers",game.id) or []):
             print("Called numbers do not match the game's called numbers.")
             return
         
@@ -501,7 +508,7 @@ class GameConsumer(WebsocketConsumer):
                         'data': result
                     }
                 )
-                bingo = self.get_game_state("bingo")
+                bingo = self.get_game_state("bingo",game.id)
                 if bingo == False:
                     acc.wallet += game.winner_price
                     acc.save()
