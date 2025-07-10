@@ -17,6 +17,7 @@ class GameConsumer(WebsocketConsumer):
 
     def connect(self):
         self.stake = self.scope['url_route']['kwargs']['stake']
+        print(f"Connecting to game with stake: {self.stake}")
         self.room_group_name = f'game_{self.stake}'
         self.accept()
 
