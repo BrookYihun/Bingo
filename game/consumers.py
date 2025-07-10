@@ -42,6 +42,10 @@ class GameConsumer(WebsocketConsumer):
 
         if data['type'] == 'select_number':
             self.add_player(data['player_id'], data['card_id'])
+            self.send(text_data=json.dumps({
+                "type": "success",
+                "message": "Player successfully added and number selected."
+            }))
 
         if data['type'] == 'remove_number':
             self.remove_player(data['userId'])
