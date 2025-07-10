@@ -277,7 +277,7 @@ class GameConsumer(WebsocketConsumer):
                 # Reset players for new cycle
                 self.set_selected_players([])
                 self.set_player_count(0)
-                self.set_game_state("next_game_start", timezone.now().timestamp() + 30)  # 30s buffer until next check
+                self.set_stake_state("next_game_start", timezone.now().timestamp() + 30)  # 30s buffer until next check
             
     def get_remaining_time(self):
         next_start_ts = self.get_stake_state("next_game_start")
@@ -297,7 +297,7 @@ class GameConsumer(WebsocketConsumer):
         # Add helper attribute
         self.game_id = game.id
         self.room_group_name = f"game_room_{game.id}"
-        self.set_game_state("is_running", True)
+        self.set_game_state("is_running", True,game.id)
 
         # Timer before start
         start_delay = 30
@@ -391,7 +391,7 @@ class GameConsumer(WebsocketConsumer):
             )
 
             called.append(num)
-            self.set_game_state("called_numbers", called)
+            self.set_game_state("called_numbers", called,game.id)
 
             time.sleep(5)
 
@@ -399,7 +399,7 @@ class GameConsumer(WebsocketConsumer):
         time.sleep(10)
         game.played = 'closed'
         game.save()
-        self.set_game_state("is_running", False)
+        self.set_game_state("is_running", False,game.id)
 
         active_games = self.get_active_games()
         if self.game_id in active_games:
@@ -512,7 +512,7 @@ class GameConsumer(WebsocketConsumer):
                 if bingo == False:
                     acc.wallet += game.winner_price
                     acc.save()
-                    self.set_game_state("bingo",True)
+                    self.set_game_state("bingo",True,game.id)
                 return  # Exit once Bingo is found for any card
 
         # If no Bingo was found for any card
