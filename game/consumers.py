@@ -183,6 +183,16 @@ class GameConsumer(WebsocketConsumer):
         self.set_player_count(player_count)
 
         user = User.objects.get(id=player_id)
+        if not user.is_active:
+            print(user)
+            async_to_sync(self.channel_layer.send)(
+                self.channel_name,
+                {
+                    'type': 'error',
+                    'message': 'User account is inactive.'
+                }
+            )
+            return
         if user.wallet < Decimal(self.stake) * len(card_ids):
             async_to_sync(self.channel_layer.send)(
                 self.channel_name,
