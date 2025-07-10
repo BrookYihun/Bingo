@@ -17,7 +17,6 @@ class GameConsumer(WebsocketConsumer):
 
     def connect(self):
         self.stake = self.scope['url_route']['kwargs']['stake']
-        print(f"Connecting to game with stake: {self.stake}")
         self.room_group_name = f'game_{self.stake}'
         self.accept()
 
@@ -26,7 +25,6 @@ class GameConsumer(WebsocketConsumer):
             self.room_group_name,
             self.channel_name
         )
-        print("accept")
         # Start game scheduler only once per stake
         with self.lock:
             if self.stake not in self.game_threads_started:
@@ -103,6 +101,16 @@ class GameConsumer(WebsocketConsumer):
                 "cards": bingo_table_data
             }))
             return
+        
+        if type == "get_stake_stat":
+            # Example response
+            stats = {
+                "type": "game_stat",
+                "stake": self.stake,
+                "player_count": self.get_player_count(),
+                "remaining_seconds": self.get_remaining_time(),  # Optional if timer is running
+            }
+            self.send(text_data=json.dumps(stats))
 
     # --- Redis state helpers ---
     def get_selected_players(self):
@@ -195,7 +203,8 @@ class GameConsumer(WebsocketConsumer):
             {
                 'type': 'game_stat',
                 'number_of_players': self.get_player_count(),
-                'stake': self.stake
+                'stake': self.stake,
+                'remaining_seconds': self.get_remaining_time()
             }
         )
 
@@ -261,6 +270,16 @@ class GameConsumer(WebsocketConsumer):
                 # Reset players for new cycle
                 self.set_selected_players([])
                 self.set_player_count(0)
+                self.set_game_state("next_game_start", timezone.now().timestamp() + 30)  # 30s buffer until next check
+            
+    def get_remaining_time(self):
+        next_start_ts = self.get_game_state("next_game_start")
+        if not next_start_ts:
+            return 0
+        now = time.time()
+        remaining = max(0, int(next_start_ts - now))
+        return remaining
+
     
     def start_game_with_random_numbers(self, game, selected_players):
         from custom_auth.models import User
@@ -554,7 +573,8 @@ class GameConsumer(WebsocketConsumer):
         self.send(text_data=json.dumps({
             'type': 'game_stat',
             'number_of_players': event['number_of_players'],
-            'stake': event['stake']
+            'stake': event['stake'],
+            'remaining_seconds': event.get('remaining_seconds', 0),
         }))
 
     def game_started(self, event):
