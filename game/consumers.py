@@ -161,11 +161,11 @@ class GameConsumer(WebsocketConsumer):
         self.redis_client.set(f"stake_state_{self.stake}_{key}", json.dumps(value))
     
     def get_bingo_page_users(self):
-        data = self.redis_client.get(f"bingo_page_users_{self.game_id}")
+        data = self.redis_client.get(f"bingo_page_users_{self.stake}")
         return set(json.loads(data)) if data else set()
 
     def set_bingo_page_users(self, users):
-        self.redis_client.set(f"bingo_page_users_{self.game_id}", json.dumps(list(users)))
+        self.redis_client.set(f"bingo_page_users_{self.stake}", json.dumps(list(users)))
 
 
     # --- Player management ---
