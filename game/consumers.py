@@ -405,7 +405,7 @@ class GameConsumer(WebsocketConsumer):
 
         # Now send random numbers every 5 seconds
         for num in json.loads(game.random_numbers):
-            is_running = self.get_game_state("is_running")
+            is_running = self.get_game_state("is_running", game.id)
             if not is_running:
                 break
 
@@ -421,11 +421,11 @@ class GameConsumer(WebsocketConsumer):
                 )
 
                 # ✅ Store in Redis
-                called = self.get_game_state("called_numbers") or []
+                called = self.get_game_state("called_numbers",game.id) or []
                 if not isinstance(called, list):
                     called = []
                 called.append(num)
-                self.set_game_state("called_numbers", called)
+                self.set_game_state("called_numbers", called, game.id)
 
             time.sleep(5)
         # Finish
