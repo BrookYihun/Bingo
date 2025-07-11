@@ -243,15 +243,12 @@ class GameConsumer(WebsocketConsumer):
             if player_count >= 3 and len(active_games) < 2:
                 from game.models import Game  # ✅ Make sure it's the correct path
                 from django.utils import timezone
-                import random
+                
                 print("Starting a new game with selected players:", selected_players)
                 # Build the playerCard map: {user_id: [card_ids]}
                 player_card_map = {
                     str(p['user']): p['card'] for p in selected_players
                 }
-                
-                # Random numbers to call
-                random_numbers = random.sample(range(1, 91), 90)  # Example: 1 to 90
                 
                 # Calculate number of cards
                 number_of_cards = sum(len(c) for c in player_card_map.values())
@@ -261,8 +258,7 @@ class GameConsumer(WebsocketConsumer):
                     stake=self.stake,
                     numberofplayers=number_of_cards,
                     playerCard=player_card_map,
-                    random_numbers={'numbers': random_numbers},
-                    called_numbers={'numbers': []},
+                    random_numbers=json.dumps(self.generate_random_numbers()),
                     winner_price=0,  # Can be updated later
                     admin_cut=0,     # Can be calculated
                     created_at=timezone.now(),
@@ -308,11 +304,19 @@ class GameConsumer(WebsocketConsumer):
         remaining = max(0, int(next_start_ts - now))
         return remaining
 
+    def generate_random_numbers():
+        import random
+        # Generate a list of numbers from 1 to 75
+        numbers = list(range(1, 76))
+        
+        # Shuffle the list to randomize the order
+        random.shuffle(numbers)
+        
+        return numbers
     
     def start_game_with_random_numbers(self, game, selected_players):
         from custom_auth.models import User
         from decimal import Decimal
-        import random
         import json
 
         # Add helper attribute
@@ -400,25 +404,30 @@ class GameConsumer(WebsocketConsumer):
         )
 
         # Now send random numbers every 5 seconds
-        called = []
-        for num in game.random_numbers.get("numbers", []):
-            if not self.get_game_state("is_running",game.id):
+        for num in json.loads(game.random_numbers):
+            is_running = self.get_game_state("is_running")
+            if not is_running:
                 break
 
-            async_to_sync(self.channel_layer.group_send)(
-                self.room_group_name,
-                {
-                    'type': 'random_number',
-                    'random_number': num,
-                    'game_id': game.id
-                }
-            )
+            with self.lock:
+                # Send the random number to all players in the group only once
+                async_to_sync(self.channel_layer.group_send)(
+                    self.room_group_name,
+                    {
+                        'type': 'random_number',
+                        'random_number': num,
+                        'game_id': game.id
+                    }
+                )
 
-            called.append(num)
-            self.set_game_state("called_numbers", called,game.id)
+                # ✅ Store in Redis
+                called = self.get_game_state("called_numbers") or []
+                if not isinstance(called, list):
+                    called = []
+                called.append(num)
+                self.set_game_state("called_numbers", called)
 
             time.sleep(5)
-
         # Finish
         time.sleep(10)
         game.played = 'closed'
