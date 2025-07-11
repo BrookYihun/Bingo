@@ -304,7 +304,7 @@ class GameConsumer(WebsocketConsumer):
         remaining = max(0, int(next_start_ts - now))
         return remaining
 
-    def generate_random_numbers():
+    def generate_random_numbers(self):
         import random
         # Generate a list of numbers from 1 to 75
         numbers = list(range(1, 76))
