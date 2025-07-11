@@ -115,14 +115,14 @@ def generate_random_numbers():
 def get_active_games(request):
     now = timezone.now()
     
-    # Step 1: Get all games with 'Started', 'Created', or 'playing' status
-    active_games_qs = Game.objects.filter(played__in=['Started', 'Created', 'Playing'])
+    # # Step 1: Get all games with 'Started', 'Created', or 'playing' status
+    # active_games_qs = Game.objects.filter(played__in=['Started', 'Created', 'Playing'])
     
-    # Step 2: Filter games older than 500 seconds
-    expired_games = active_games_qs.filter(started_at__lt=now - timezone.timedelta(seconds=500))
+    # # Step 2: Filter games older than 500 seconds
+    # expired_games = active_games_qs.filter(started_at__lt=now - timezone.timedelta(seconds=500))
     
-    # Step 3: Update expired games to 'closed'
-    expired_games.update(played='closed')
+    # # Step 3: Update expired games to 'closed'
+    # expired_games.update(played='closed')
 
     # Step 4: Refresh the queryset to only include valid active games after update
     active_games = (

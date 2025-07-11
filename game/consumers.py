@@ -7,6 +7,8 @@ from asgiref.sync import async_to_sync
 import redis
 import uuid
 
+from game.models import Game
+
 class GameConsumer(WebsocketConsumer):
     redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
     game_threads_started = set()
@@ -235,7 +237,7 @@ class GameConsumer(WebsocketConsumer):
     # --- Automatic Game Loop ---
     def auto_game_start_loop(self):
         while True:
-            time.sleep(30)
+            time.sleep(5)
             selected_players = self.get_selected_players()
             player_count = self.get_player_count()
             active_games = self.get_active_games()
@@ -431,6 +433,7 @@ class GameConsumer(WebsocketConsumer):
             time.sleep(5)
         # Finish
         time.sleep(10)
+        game = Game.objects.get(id=game.id)
         game.played = 'closed'
         game.save()
         self.set_game_state("is_running", False,game.id)
