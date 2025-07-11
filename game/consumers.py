@@ -114,7 +114,7 @@ class GameConsumer(WebsocketConsumer):
             }
             self.send(text_data=json.dumps(stats))
             self.send(text_data=json.dumps({
-                'type': 'update_player_list',
+                'type': 'player_list',
                 'player_list': self.get_selected_players()
             }))
 
@@ -217,7 +217,7 @@ class GameConsumer(WebsocketConsumer):
         async_to_sync(self.channel_layer.group_send)(
             self.room_group_name,
             {
-                'type': 'player_list',
+                'type': 'update_player_list',
                 'player_list': self.get_selected_players()
             }
         )
