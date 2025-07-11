@@ -406,7 +406,8 @@ class GameConsumer(WebsocketConsumer):
         # Now send random numbers every 5 seconds
         for num in json.loads(game.random_numbers):
             is_running = self.get_game_state("is_running", game.id)
-            if not is_running:
+            bingo = self.get_game_state("bingo", game.id)
+            if not is_running or bingo:
                 break
 
             with self.lock:
