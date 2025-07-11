@@ -47,6 +47,8 @@ class GameConsumer(WebsocketConsumer):
             active_games = self.get_active_games()
             next_game_start = self.get_stake_state("next_game_start")
             remaining_seconds = max(0, int(next_game_start - timezone.now().timestamp)) if next_game_start else 0
+            print(f"Active games: {len(active_games)}, Remaining seconds: {remaining_seconds}")
+            print(next_game_start, timezone.now().timestamp())
             if len(active_games) < 2 and remaining_seconds > 0:
                 self.add_player(data['player_id'], data['card_id'])
                 self.send(text_data=json.dumps({
@@ -255,7 +257,7 @@ class GameConsumer(WebsocketConsumer):
         active_games = self.get_active_games()
 
         next_game_start = self.get_stake_state("next_game_start")
-        current_time = time.time()
+        current_time = timezone.now().timestamp()
 
         if player_count >= 3 and len(active_games) < 2 and (not next_game_start or next_game_start < current_time):
             print("Scheduling new game start in 30s")
