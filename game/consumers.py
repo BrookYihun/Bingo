@@ -320,6 +320,7 @@ class GameConsumer(WebsocketConsumer):
                 # Reset players for new cycle
                 self.set_selected_players([])
                 self.set_player_count(0)
+                self.broadcast_player_list()
             
     def get_remaining_time(self):
         next_start_ts = self.get_stake_state("next_game_start")
