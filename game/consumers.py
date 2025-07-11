@@ -259,7 +259,7 @@ class GameConsumer(WebsocketConsumer):
         next_game_start = self.get_stake_state("next_game_start")
         current_time = timezone.now().timestamp()
 
-        if player_count >= 3 and len(active_games) < 2 and (not next_game_start or next_game_start < current_time):
+        if len(active_games) < 2 and (not next_game_start or next_game_start < current_time):
             print("Scheduling new game start in 30s")
             self.set_stake_state("next_game_start", current_time + 30)
 
