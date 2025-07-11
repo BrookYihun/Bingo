@@ -278,7 +278,7 @@ class GameConsumer(WebsocketConsumer):
                 
                 # Broadcast the game start
                 async_to_sync(self.channel_layer.group_send)(
-                    "game_10",
+                    self.room_group_name,
                     {
                         'type': 'game_started',
                         'game_id': new_game.id,
@@ -606,12 +606,14 @@ class GameConsumer(WebsocketConsumer):
         }))
 
     def game_started(self, event):
+        print("🎯 [WS] game_started called:", event)
         self.send(text_data=json.dumps({
             'type': 'game_started',
             'game_id': event['game_id'],
             'player_list': event['player_list'],
             'stake': event['stake']
         }))
+
 
     def error(self, event):
         self.send(text_data=json.dumps({
