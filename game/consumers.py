@@ -317,7 +317,6 @@ class GameConsumer(WebsocketConsumer):
 
         # Add helper attribute
         self.game_id = game.id
-        self.room_group_name = f"game_room_{game.id}"
         self.set_game_state("is_running", True,game.id)
 
         # Timer before start
@@ -330,6 +329,7 @@ class GameConsumer(WebsocketConsumer):
             self.room_group_name,
             {
                 'type': 'timer_message',
+                'game_id': game.id,
                 'remaining_seconds': remaining_seconds,
                 'message': str(game.started_at),
             }
@@ -343,6 +343,7 @@ class GameConsumer(WebsocketConsumer):
             self.room_group_name,
             {
                 'type': 'playing',
+                'game_id': game.id,
                 'message': 'Game is now playing'
             }
         )
@@ -393,7 +394,8 @@ class GameConsumer(WebsocketConsumer):
                 'number_of_players': game.numberofplayers,
                 'stake': game.stake,
                 'winner_price': float(game.winner_price),
-                'bonus': game.bonus
+                'bonus': game.bonus,
+                'game_id': game.id,
             }
         )
 
@@ -407,7 +409,8 @@ class GameConsumer(WebsocketConsumer):
                 self.room_group_name,
                 {
                     'type': 'random_number',
-                    'random_number': num
+                    'random_number': num,
+                    'game_id': game.id
                 }
             )
 
@@ -447,7 +450,8 @@ class GameConsumer(WebsocketConsumer):
             result.append({'user_id': user_id, 'message': 'Not a Player'})
             self.send(text_data=json.dumps({
                 'type': 'result',
-                'data': result
+                'data': result,
+                'game_id': game.id,
             }))
             return
         
@@ -526,7 +530,8 @@ class GameConsumer(WebsocketConsumer):
                     self.room_group_name,
                     {
                         'type': 'result',
-                        'data': result
+                        'data': result,
+                        'game_id': game.id
                     }
                 )
                 bingo = self.get_game_state("bingo",game.id)
@@ -545,7 +550,8 @@ class GameConsumer(WebsocketConsumer):
         })
         self.send(text_data=json.dumps({
             'type': 'result',
-            'data': result
+            'data': result,
+            'game_id': game.id
         }))
 
     def has_bingo(self, card, called_numbers):
@@ -618,5 +624,50 @@ class GameConsumer(WebsocketConsumer):
     def error(self, event):
         self.send(text_data=json.dumps({
             'type': 'error',
+            'message': event['message']
+        }))
+
+    def random_number(self, event):
+        self.send(text_data=json.dumps({
+            'type': 'random_number',
+            'random_number': event['random_number'],
+            'game_id': event['game_id']
+        }))
+
+    def timer_message(self, event):
+        self.send(text_data=json.dumps({
+            'type': 'timer_message',
+            'game_id': event['game_id'],
+            'remaining_seconds': event['remaining_seconds'],
+            'message': event['message']
+        }))
+    
+    def playing(self, event):
+        self.send(text_data=json.dumps({
+            'type': 'playing',
+            'game_id': event['game_id'],
+            'message': event['message']
+        }))
+    
+    def game_stats(self, event):
+        self.send(text_data=json.dumps({
+            'type': 'game_stats',
+            'number_of_players': event['number_of_players'],
+            'stake': event['stake'],
+            'winner_price': event['winner_price'],
+            'bonus': event['bonus'],
+            'game_id': event['game_id']
+        }))
+    
+    def result(self, event):
+        self.send(text_data=json.dumps({
+            'type': 'result',
+            'data': event['data'],
+            'game_id': event['game_id']
+        }))
+    
+    def no_cards(self, event):
+        self.send(text_data=json.dumps({
+            'type': 'no_cards',
             'message': event['message']
         }))
