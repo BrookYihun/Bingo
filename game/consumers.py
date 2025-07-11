@@ -278,7 +278,7 @@ class GameConsumer(WebsocketConsumer):
                 
                 # Broadcast the game start
                 async_to_sync(self.channel_layer.group_send)(
-                    self.room_group_name,
+                    "game_10",
                     {
                         'type': 'game_started',
                         'game_id': new_game.id,
