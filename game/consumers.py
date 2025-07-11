@@ -7,8 +7,6 @@ from asgiref.sync import async_to_sync
 import redis
 import uuid
 
-from game.models import Game
-
 class GameConsumer(WebsocketConsumer):
     redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
     game_threads_started = set()
@@ -320,6 +318,7 @@ class GameConsumer(WebsocketConsumer):
         from custom_auth.models import User
         from decimal import Decimal
         import json
+        from game.models import Game
 
         # Add helper attribute
         self.game_id = game.id
