@@ -45,6 +45,7 @@ class GameConsumer(WebsocketConsumer):
 
         if data['type'] == 'select_number':
             active_games = self.get_active_games()
+            next_game_start = self.get_stake_state("next_game_start")
             now_ts = timezone.now().timestamp()
             remaining_seconds = max(0, int(next_game_start - now_ts)) if next_game_start else 0
             print(f"Active games: {len(active_games)}, Remaining seconds: {remaining_seconds}")
