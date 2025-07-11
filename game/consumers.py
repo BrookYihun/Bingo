@@ -30,6 +30,7 @@ class GameConsumer(WebsocketConsumer):
             if self.stake not in self.game_threads_started:
                 threading.Thread(target=self.auto_game_start_loop, daemon=True).start()
                 self.game_threads_started.add(self.stake)
+                print(f"Started game loop for stake {self.stake}")
 
     def disconnect(self, close_code):
         async_to_sync(self.channel_layer.group_discard)(
@@ -238,12 +239,12 @@ class GameConsumer(WebsocketConsumer):
             selected_players = self.get_selected_players()
             player_count = self.get_player_count()
             active_games = self.get_active_games()
-
+            print(f"Checking game start conditions: {player_count} players, {len(active_games)} active games")
             if player_count >= 3 and len(active_games) < 2:
                 from game.models import Game  # ✅ Make sure it's the correct path
                 from django.utils import timezone
                 import random
-                
+                print("Starting a new game with selected players:", selected_players)
                 # Build the playerCard map: {user_id: [card_ids]}
                 player_card_map = {
                     str(p['user']): p['card'] for p in selected_players
@@ -268,6 +269,8 @@ class GameConsumer(WebsocketConsumer):
                     started_at=timezone.now(),
                     played='Started'
                 )
+                new_game.save()
+                print(f"New game created with ID: {new_game.id} and stake: {self.stake}")   
                 
                 # Add game_id to Redis active games
                 active_games.append(new_game.id)
