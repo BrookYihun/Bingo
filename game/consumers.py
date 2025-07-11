@@ -42,11 +42,13 @@ class GameConsumer(WebsocketConsumer):
         data = json.loads(text_data)
 
         if data['type'] == 'select_number':
-            self.add_player(data['player_id'], data['card_id'])
-            self.send(text_data=json.dumps({
-                "type": "success",
-                "message": "Player successfully added and number selected."
-            }))
+            active_games = self.get_active_games()
+            if len(active_games) < 2:
+                self.add_player(data['player_id'], data['card_id'])
+                self.send(text_data=json.dumps({
+                    "type": "success",
+                    "message": "Player successfully added and number selected."
+                }))
 
         if data['type'] == 'remove_number':
             self.remove_player(data['userId'])
@@ -57,6 +59,12 @@ class GameConsumer(WebsocketConsumer):
             bingo_page_users.add(user_id)
             self.set_bingo_page_users(bingo_page_users)
             print(f"User {user_id} joined bingo page for game")
+            next_game_start = self.get_stake_state("next_game_start")
+            remaining_seconds = max(0, int(next_game_start - timezone.now().timestamp)) if next_game_start else 0
+            self.send(text_data=json.dumps({
+                "type": "timer_message",
+                "remaining_seconds": remaining_seconds,
+            }))
         
         if data['type'] == 'bingo':
             async_to_sync(self.checkBingo(int(data['userId']), data['calledNumbers'], data['gameId']))
@@ -235,14 +243,26 @@ class GameConsumer(WebsocketConsumer):
     # --- Automatic Game Loop ---
     def auto_game_start_loop(self):
         while True:
-            time.sleep(5)
             selected_players = self.get_selected_players()
             player_count = self.get_player_count()
             active_games = self.get_active_games()
+
             print(f"Checking game start conditions: {player_count} players, {len(active_games)} active games")
-            if player_count >= 3 and len(active_games) < 2:
+            if len(active_games) < 2:
                 from game.models import Game  # ✅ Make sure it's the correct path
                 from django.utils import timezone
+
+                self.set_stake_state("next_game_start", timezone.now().timestamp() + 30)
+
+                async_to_sync(self.channel_layer.group_send)(
+                    self.room_group_name,
+                    {
+                        'type': 'timer_message',
+                        'remaining_seconds': 30,
+                    }
+                )
+
+                time.sleep(30)  # Wait before checking again
                 
                 print("Starting a new game with selected players:", selected_players)
                 # Build the playerCard map: {user_id: [card_ids]}
@@ -271,7 +291,7 @@ class GameConsumer(WebsocketConsumer):
                 # Add game_id to Redis active games
                 active_games.append(new_game.id)
                 self.set_active_games(active_games)
-                
+
                 # Broadcast the game start
                 async_to_sync(self.channel_layer.group_send)(
                     self.room_group_name,
@@ -284,7 +304,6 @@ class GameConsumer(WebsocketConsumer):
                 )
 
                 print(f"Starting game with ID: {new_game.id} and players: {selected_players}")
-
                 threading.Thread(
                     target=self.start_game_with_random_numbers,
                     args=(new_game, selected_players),
@@ -294,7 +313,6 @@ class GameConsumer(WebsocketConsumer):
                 # Reset players for new cycle
                 self.set_selected_players([])
                 self.set_player_count(0)
-                self.set_stake_state("next_game_start", timezone.now().timestamp() + 30)  # 30s buffer until next check
             
     def get_remaining_time(self):
         next_start_ts = self.get_stake_state("next_game_start")
@@ -323,24 +341,7 @@ class GameConsumer(WebsocketConsumer):
         # Add helper attribute
         self.game_id = game.id
         self.set_game_state("is_running", True,game.id)
-
-        # Timer before start
-        start_delay = 30
-        start_time_with_delay = game.started_at + timezone.timedelta(seconds=start_delay)
-        remaining = (start_time_with_delay - timezone.now()).total_seconds()
-        remaining_seconds = max(int(remaining), 0)
-
-        async_to_sync(self.channel_layer.group_send)(
-            self.room_group_name,
-            {
-                'type': 'timer_message',
-                'game_id': game.id,
-                'remaining_seconds': remaining_seconds,
-                'message': str(game.started_at),
-            }
-        )
-
-        time.sleep(start_delay)  # Wait for 30 seconds
+        self.set_game_state("bingo", False,game.id)
         game.played = 'Playing'
         game.save()
 
@@ -356,10 +357,16 @@ class GameConsumer(WebsocketConsumer):
         # Deduct balance only from players in bingo page
         stake_amount = Decimal(game.stake)
         updated_player_cards = []
-        total_cards = sum(len(player["card"]) for player in selected_players)
         bingo_users = self.get_bingo_page_users()  # Your existing method
 
+        # Step 0: Remove duplicate users (keep only last entry per user)
+        unique_entries = {}
         for entry in selected_players:
+            unique_entries[entry["user"]] = entry  # Overwrites older entry
+
+        deduplicated_players = list(unique_entries.values())
+
+        for entry in deduplicated_players:
             try:
                 user_id = entry["user"]
                 cards = entry["card"]
@@ -486,9 +493,9 @@ class GameConsumer(WebsocketConsumer):
             return 
         
         # Include a zero at the end of the called numbers (for "free space" if applicable)
-        if not set(calledNumbers).issubset(self.get_game_state("called_numbers",game.id) or []):
-            print("Called numbers do not match the game's called numbers.")
-            return
+        # if not set(calledNumbers).issubset(self.get_game_state("called_numbers",game.id) or []):
+        #     print("Called numbers do not match the game's called numbers.")
+        #     return
         
         called_numbers_list = calledNumbers + [0]
         game.total_calls = len(called_numbers_list)
@@ -649,7 +656,6 @@ class GameConsumer(WebsocketConsumer):
     def timer_message(self, event):
         self.send(text_data=json.dumps({
             'type': 'timer_message',
-            'game_id': event['game_id'],
             'remaining_seconds': event['remaining_seconds'],
             'message': event['message']
         }))
