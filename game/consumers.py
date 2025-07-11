@@ -287,12 +287,14 @@ class GameConsumer(WebsocketConsumer):
                     }
                 )
 
+                print(f"Starting game with ID: {new_game.id} and players: {selected_players}")
+
                 threading.Thread(
                     target=self.start_game_with_random_numbers,
                     args=(new_game, selected_players),
                     daemon=True
                 ).start()
-
+                print(f"Game thread started for game ID: {new_game.id}")
                 # Reset players for new cycle
                 self.set_selected_players([])
                 self.set_player_count(0)
