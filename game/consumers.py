@@ -72,7 +72,9 @@ class GameConsumer(WebsocketConsumer):
             self.set_bingo_page_users(bingo_page_users)
             print(f"User {user_id} joined bingo page for game")
             next_game_start = self.get_stake_state("next_game_start")
-            remaining_seconds = max(0, int(next_game_start - timezone.now().timestamp)) if next_game_start else 0
+            now_ts = timezone.now().timestamp()
+
+            remaining_seconds = max(0, int(next_game_start - now_ts)) if next_game_start else 0
             self.send(text_data=json.dumps({
                 "type": "timer_message",
                 "remaining_seconds": remaining_seconds,
