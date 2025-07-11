@@ -450,9 +450,9 @@ class GameConsumer(WebsocketConsumer):
         
         # Retrieve player's cards based on the provided user_id
         print(game.playerCard)
-        selected_players = self.get_selected_players()
+        selected_players = game.playerCard
         players = selected_players
-        player_cards = [entry['card'] for entry in players if entry['user'] == user_id]
+        player_cards = [entry['card'] for entry in players if int(entry['user']) == int(user_id)]
 
         if not player_cards:
             # User does not have any cards associated
