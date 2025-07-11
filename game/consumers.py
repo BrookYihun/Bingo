@@ -25,12 +25,14 @@ class GameConsumer(WebsocketConsumer):
             self.room_group_name,
             self.channel_name
         )
-        # Start game scheduler only once per stake
-        with self.lock:
-            if self.stake not in self.game_threads_started:
-                threading.Thread(target=self.auto_game_start_loop, daemon=True).start()
-                self.game_threads_started.add(self.stake)
-                print(f"Started game loop for stake {self.stake}")
+        # # Start game scheduler only once per stake
+        # with self.lock:
+        #     if self.stake not in self.game_threads_started:
+        #         threading.Thread(target=self.auto_game_start_loop, daemon=True).start()
+        #         self.game_threads_started.add(self.stake)
+        #         print(f"Started game loop for stake {self.stake}")
+
+        self.try_start_game()
 
     def disconnect(self, close_code):
         async_to_sync(self.channel_layer.group_discard)(
@@ -52,6 +54,7 @@ class GameConsumer(WebsocketConsumer):
                     "message": "Player successfully added and number selected."
                 }))
             else:
+                self.try_start_game()
                 self.send(text_data=json.dumps({
                     "type": "error",
                     "message": "To many active games wait for next game to start."
@@ -246,81 +249,156 @@ class GameConsumer(WebsocketConsumer):
                 'remaining_seconds': self.get_remaining_time()
             }
         )
+    def try_start_game(self):
+        selected_players = self.get_selected_players()
+        player_count = self.get_player_count()
+        active_games = self.get_active_games()
 
-    # --- Automatic Game Loop ---
-    def auto_game_start_loop(self):
-        while True:
-            selected_players = self.get_selected_players()
-            player_count = self.get_player_count()
-            active_games = self.get_active_games()
+        next_game_start = self.get_stake_state("next_game_start")
+        current_time = time.time()
 
-            print(f"Checking game start conditions: {player_count} players, {len(active_games)} active games")
-            if len(active_games) < 2:
-                from game.models import Game  # ✅ Make sure it's the correct path
-                from django.utils import timezone
+        if player_count >= 3 and len(active_games) < 2 and (not next_game_start or next_game_start < current_time):
+            print("Scheduling new game start in 30s")
+            self.set_stake_state("next_game_start", current_time + 30)
 
-                self.set_stake_state("next_game_start", timezone.now().timestamp() + 30)
-
-                async_to_sync(self.channel_layer.group_send)(
-                    self.room_group_name,
-                    {
-                        'type': 'timer_message',
-                        'remaining_seconds': 30,
-                    }
-                )
-
-                time.sleep(30)  # Wait before checking again
-                
-                print("Starting a new game with selected players:", selected_players)
-                # Build the playerCard map: {user_id: [card_ids]}
-                player_card_map = {
-                    str(p['user']): p['card'] for p in selected_players
+            async_to_sync(self.channel_layer.group_send)(
+                self.room_group_name,
+                {
+                    'type': 'timer_message',
+                    'remaining_seconds': 30,
                 }
-                
-                # Calculate number of cards
-                number_of_cards = sum(len(c) for c in player_card_map.values())
-                
-                # Create game in DB
-                new_game = Game.objects.create(
-                    stake=self.stake,
-                    numberofplayers=number_of_cards,
-                    playerCard=player_card_map,
-                    random_numbers=json.dumps(self.generate_random_numbers()),
-                    winner_price=0,  # Can be updated later
-                    admin_cut=0,     # Can be calculated
-                    created_at=timezone.now(),
-                    started_at=timezone.now(),
-                    played='Started'
-                )
-                new_game.save()
-                print(f"New game created with ID: {new_game.id} and stake: {self.stake}")   
-                
-                # Add game_id to Redis active games
-                active_games.append(new_game.id)
-                self.set_active_games(active_games)
+            )
 
-                # Broadcast the game start
-                async_to_sync(self.channel_layer.group_send)(
-                    self.room_group_name,
-                    {
-                        'type': 'game_started',
-                        'game_id': new_game.id,
-                        'player_list': selected_players,
-                        'stake': self.stake
-                    }
-                )
+            def delayed_start():
+                time.sleep(30)
+                self._start_game_logic(selected_players)
 
-                print(f"Starting game with ID: {new_game.id} and players: {selected_players}")
-                threading.Thread(
-                    target=self.start_game_with_random_numbers,
-                    args=(new_game, selected_players),
-                    daemon=True
-                ).start()
-                print(f"Game thread started for game ID: {new_game.id}")
-                # Reset players for new cycle
-                self.set_selected_players([])
-                self.set_player_count(0)
-                self.broadcast_player_list()
+            threading.Thread(target=delayed_start, daemon=True).start()
+
+
+    def _start_game_logic(self, selected_players):
+        from game.models import Game
+        from django.utils import timezone
+
+        # Build the playerCard map
+        player_card_map = {
+            str(p['user']): p['card'] for p in selected_players
+        }
+
+        new_game = Game.objects.create(
+            stake=self.stake,
+            numberofplayers=sum(len(c) for c in player_card_map.values()),
+            playerCard=player_card_map,
+            random_numbers=json.dumps(self.generate_random_numbers()),
+            winner_price=0,
+            admin_cut=0,
+            created_at=timezone.now(),
+            started_at=timezone.now(),
+            played='Started'
+        )
+        new_game.save()
+        print(f"New game created with ID: {new_game.id}")
+
+        # Update Redis and broadcast
+        active_games = self.get_active_games()
+        active_games.append(new_game.id)
+        self.set_active_games(active_games)
+
+        async_to_sync(self.channel_layer.group_send)(
+            self.room_group_name,
+            {
+                'type': 'game_started',
+                'game_id': new_game.id,
+                'player_list': selected_players,
+                'stake': self.stake
+            }
+        )
+
+        threading.Thread(
+            target=self.start_game_with_random_numbers,
+            args=(new_game, selected_players),
+            daemon=True
+        ).start()
+
+        # Reset for next round
+        self.set_selected_players([])
+        self.set_player_count(0)
+        self.broadcast_player_list()
+
+    # # --- Automatic Game Loop ---
+    # def auto_game_start_loop(self):
+    #     while True:
+    #         selected_players = self.get_selected_players()
+    #         player_count = self.get_player_count()
+    #         active_games = self.get_active_games()
+
+    #         print(f"Checking game start conditions: {player_count} players, {len(active_games)} active games")
+    #         if len(active_games) < 2:
+    #             from game.models import Game  # ✅ Make sure it's the correct path
+    #             from django.utils import timezone
+
+    #             self.set_stake_state("next_game_start", timezone.now().timestamp() + 30)
+
+    #             async_to_sync(self.channel_layer.group_send)(
+    #                 self.room_group_name,
+    #                 {
+    #                     'type': 'timer_message',
+    #                     'remaining_seconds': 30,
+    #                 }
+    #             )
+
+    #             time.sleep(30)  # Wait before checking again
+                
+    #             print("Starting a new game with selected players:", selected_players)
+    #             # Build the playerCard map: {user_id: [card_ids]}
+    #             player_card_map = {
+    #                 str(p['user']): p['card'] for p in selected_players
+    #             }
+                
+    #             # Calculate number of cards
+    #             number_of_cards = sum(len(c) for c in player_card_map.values())
+                
+    #             # Create game in DB
+    #             new_game = Game.objects.create(
+    #                 stake=self.stake,
+    #                 numberofplayers=number_of_cards,
+    #                 playerCard=player_card_map,
+    #                 random_numbers=json.dumps(self.generate_random_numbers()),
+    #                 winner_price=0,  # Can be updated later
+    #                 admin_cut=0,     # Can be calculated
+    #                 created_at=timezone.now(),
+    #                 started_at=timezone.now(),
+    #                 played='Started'
+    #             )
+    #             new_game.save()
+    #             print(f"New game created with ID: {new_game.id} and stake: {self.stake}")   
+                
+    #             # Add game_id to Redis active games
+    #             active_games.append(new_game.id)
+    #             self.set_active_games(active_games)
+
+    #             # Broadcast the game start
+    #             async_to_sync(self.channel_layer.group_send)(
+    #                 self.room_group_name,
+    #                 {
+    #                     'type': 'game_started',
+    #                     'game_id': new_game.id,
+    #                     'player_list': selected_players,
+    #                     'stake': self.stake
+    #                 }
+    #             )
+
+    #             print(f"Starting game with ID: {new_game.id} and players: {selected_players}")
+    #             threading.Thread(
+    #                 target=self.start_game_with_random_numbers,
+    #                 args=(new_game, selected_players),
+    #                 daemon=True
+    #             ).start()
+    #             print(f"Game thread started for game ID: {new_game.id}")
+    #             # Reset players for new cycle
+    #             self.set_selected_players([])
+    #             self.set_player_count(0)
+    #             self.broadcast_player_list()
             
     def get_remaining_time(self):
         next_start_ts = self.get_stake_state("next_game_start")
