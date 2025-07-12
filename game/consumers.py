@@ -86,8 +86,12 @@ class GameConsumer(WebsocketConsumer):
             bingo = self.get_game_state("bingo", game_id=data['gameId'])
             if bingo:
                 self.set_game_state("is_running",False, game_id=data['gameId'])
-                if self.game_id in self.active_games:
-                    del self.active_games[data['game_id']]
+                active_games = self.get_active_games()
+                if data['game_id'] in active_games:
+                    active_games.remove(self.game_id)
+                    self.set_active_games(active_games)
+                    
+                self.close()
         
         if data['type'] == 'card_data':
             from game.models import Card
@@ -529,7 +533,7 @@ class GameConsumer(WebsocketConsumer):
 
             time.sleep(5)
         # Finish
-        time.sleep(10)
+        time.sleep(2)
         game = Game.objects.get(id=game.id)
         game.played = 'closed'
         game.save()
