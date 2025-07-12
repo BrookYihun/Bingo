@@ -287,7 +287,10 @@ class GameConsumer(WebsocketConsumer):
         from django.utils import timezone
 
         selected_players = self.get_selected_players()
-        # Build the playerCard map
+
+        if not selected_players:
+            return  # or raise an exception, or log a warning
+            # Build the playerCard map
         player_card_map = {
             str(p['user']): p['card'] for p in selected_players
         }
