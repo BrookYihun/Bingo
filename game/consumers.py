@@ -87,7 +87,7 @@ class GameConsumer(WebsocketConsumer):
             if bingo:
                 self.set_game_state("is_running",False, game_id=data['gameId'])
                 active_games = self.get_active_games()
-                if data['game_id'] in active_games:
+                if data['gameId'] in active_games:
                     active_games.remove(self.game_id)
                     self.set_active_games(active_games)
 
