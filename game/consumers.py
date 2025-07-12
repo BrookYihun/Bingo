@@ -90,7 +90,7 @@ class GameConsumer(WebsocketConsumer):
                 if data['game_id'] in active_games:
                     active_games.remove(self.game_id)
                     self.set_active_games(active_games)
-                    
+
                 self.close()
         
         if data['type'] == 'card_data':
@@ -752,7 +752,6 @@ class GameConsumer(WebsocketConsumer):
         self.send(text_data=json.dumps({
             'type': 'timer_message',
             'remaining_seconds': event['remaining_seconds'],
-            'message': event['message']
         }))
     
     def playing(self, event):
