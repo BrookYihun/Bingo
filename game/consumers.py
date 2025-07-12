@@ -275,15 +275,16 @@ class GameConsumer(WebsocketConsumer):
 
             def delayed_start():
                 time.sleep(30)
-                self._start_game_logic(selected_players)
+                self._start_game_logic()
 
             threading.Thread(target=delayed_start, daemon=True).start()
 
 
-    def _start_game_logic(self, selected_players):
+    def _start_game_logic(self):
         from game.models import Game
         from django.utils import timezone
 
+        selected_players = self.get_selected_players()
         # Build the playerCard map
         player_card_map = {
             str(p['user']): p['card'] for p in selected_players
