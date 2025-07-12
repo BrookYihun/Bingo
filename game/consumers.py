@@ -115,6 +115,10 @@ class GameConsumer(WebsocketConsumer):
 
             if not user_cards:
                 print("No cards found for user, skipping response.")
+                self.send(text_data=json.dumps({
+                    "type": "no_cards",
+                    "message": "No cards found for user."
+                }))
                 return  # ✅ Don't send empty card data
 
             cards = Card.objects.filter(id__in=user_cards)
