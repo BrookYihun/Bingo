@@ -258,15 +258,27 @@ class GameConsumer(WebsocketConsumer):
         )
     def try_start_game(self):
         selected_players = self.get_selected_players()
-        active_games = self.get_active_games()
-
+        all_active_game_ids = self.get_active_games()
+    
+        # Filter out games that have 2 or fewer players
+        from game.models import Game
+        valid_active_game_ids = []
+        for game_id in all_active_game_ids:
+            try:
+                game = Game.objects.get(id=game_id)
+                if game.numberofplayers > 2:
+                    valid_active_game_ids.append(game_id)
+            except Game.DoesNotExist:
+                continue
+    
         next_game_start = self.get_stake_state("next_game_start")
         current_time = timezone.now().timestamp()
-
-        if len(active_games) < 2 and (not next_game_start or next_game_start < current_time):
+    
+        # Start a new game only if fewer than 2 valid active games exist
+        if len(valid_active_game_ids) < 2 and (not next_game_start or next_game_start < current_time):
             print("Scheduling new game start in 30s")
             self.set_stake_state("next_game_start", current_time + 30)
-
+    
             async_to_sync(self.channel_layer.group_send)(
                 self.room_group_name,
                 {
@@ -274,14 +286,13 @@ class GameConsumer(WebsocketConsumer):
                     'remaining_seconds': 30,
                 }
             )
-
+    
             def delayed_start():
                 time.sleep(30)
                 self._start_game_logic()
-
+    
             threading.Thread(target=delayed_start, daemon=True).start()
-
-
+            
     def _start_game_logic(self):
         from game.models import Game
         from django.utils import timezone
