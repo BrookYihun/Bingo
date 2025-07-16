@@ -484,7 +484,7 @@ class GameConsumer(WebsocketConsumer):
                 print(f"[Deduction Error] {e}")
 
         # Update DB
-        game.numberofplayers = len(updated_player_cards)
+        game.numberofplayers = sum(len(p['card']) for p in updated_player_cards)
         game.playerCard = updated_player_cards
 
         winner_price = stake_amount * sum(len(p['card']) for p in updated_player_cards)
