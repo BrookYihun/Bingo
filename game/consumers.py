@@ -46,7 +46,8 @@ class GameConsumer(WebsocketConsumer):
         if data['type'] == 'select_number':
 
             next_game_start = self.get_stake_state("next_game_start")
-            current_time = timezone.now().timestamp()
+            now_ts = timezone.now().timestamp()
+            remaining_seconds = max(0, int(next_game_start - now_ts)) if next_game_start else 0
             selected_players = self.get_selected_players()
             all_active_game_ids = self.get_active_games()
             from game.models import Game
@@ -58,7 +59,7 @@ class GameConsumer(WebsocketConsumer):
                         valid_active_game_ids.append(game_id)
                 except Game.DoesNotExist:
                     continue
-            if len(valid_active_game_ids) < 2 and (not next_game_start or next_game_start < current_time):
+            if len(valid_active_game_ids) < 2 and remaining_seconds > 0:
                 self.add_player(data['player_id'], data['card_id'])
                 self.send(text_data=json.dumps({
                     "type": "success",
