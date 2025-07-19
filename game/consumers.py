@@ -355,6 +355,8 @@ class GameConsumer(WebsocketConsumer):
         self.set_player_count(0)
         self.broadcast_player_list()
 
+        self.try_start_game()  # Check if another game can be started immediately
+
     # # --- Automatic Game Loop ---
     # def auto_game_start_loop(self):
     #     while True:
