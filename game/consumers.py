@@ -210,15 +210,6 @@ class GameConsumer(WebsocketConsumer):
         from custom_auth.models import User
         from decimal import Decimal
 
-        selected_players = self.get_selected_players()
-        selected_players = [p for p in selected_players if p['user'] != player_id]
-        card_ids = card_id if isinstance(card_id, list) else [card_id]
-        selected_players.append({'user': player_id, 'card': card_ids})
-        self.set_selected_players(selected_players)
-
-        player_count = sum(len(p['card']) for p in selected_players)
-        self.set_player_count(player_count)
-
         user = User.objects.get(id=player_id)
         if not user.is_active:
             print(user)
@@ -239,6 +230,15 @@ class GameConsumer(WebsocketConsumer):
                 }
             )
             return
+
+        selected_players = self.get_selected_players()
+        selected_players = [p for p in selected_players if p['user'] != player_id]
+        card_ids = card_id if isinstance(card_id, list) else [card_id]
+        selected_players.append({'user': player_id, 'card': card_ids})
+        self.set_selected_players(selected_players)
+
+        player_count = sum(len(p['card']) for p in selected_players)
+        self.set_player_count(player_count)
 
         self.broadcast_player_list()
 
