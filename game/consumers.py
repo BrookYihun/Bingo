@@ -61,10 +61,6 @@ class GameConsumer(WebsocketConsumer):
                     continue
             if len(valid_active_game_ids) < 2 and remaining_seconds > 0:
                 self.add_player(data['player_id'], data['card_id'])
-                self.send(text_data=json.dumps({
-                    "type": "success",
-                    "message": "Player successfully added and number selected."
-                }))
             else:
                 self.try_start_game()
                 self.send(text_data=json.dumps({
@@ -239,7 +235,12 @@ class GameConsumer(WebsocketConsumer):
 
         player_count = sum(len(p['card']) for p in selected_players)
         self.set_player_count(player_count)
-
+        
+        self.send(text_data=json.dumps({
+                    "type": "success",
+                    "message": "Player successfully added and number selected."
+                }))
+        
         self.broadcast_player_list()
 
     def remove_player(self, player_id):
