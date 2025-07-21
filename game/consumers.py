@@ -59,7 +59,9 @@ class GameConsumer(WebsocketConsumer):
                         valid_active_game_ids.append(game_id)
                 except Game.DoesNotExist:
                     continue
-            if len(valid_active_game_ids) < 2 and remaining_seconds > 0:
+            if len(valid_active_game_ids) < 2:
+                if not remaining_seconds > 0:
+                    self.try_start_game()
                 self.add_player(data['player_id'], data['card_id'])
             else:
                 self.try_start_game()
