@@ -557,7 +557,7 @@ class GameConsumer(WebsocketConsumer):
                 called.append(num)
                 self.set_game_state("called_numbers", called, game.id)
 
-            time.sleep(5)
+            time.sleep(4)
         # Finish
         time.sleep(2)
         game = Game.objects.get(id=game.id)
