@@ -209,12 +209,33 @@ class GameConsumer(WebsocketConsumer):
         from decimal import Decimal
 
         selected_players = self.get_selected_players()
+        
+        # Remove existing entry for this user (if re-adding)
         selected_players = [p for p in selected_players if p['user'] != player_id]
+
+        # Ensure card_id is a list
         card_ids = card_id if isinstance(card_id, list) else [card_id]
 
+        # Get all used card IDs (excluding current user)
+        used_cards = set()
+        for player in selected_players:
+            used_cards.update(player['card'])
+
+        # Check if requested cards are already taken
+        conflicting_cards = [cid for cid in card_ids if cid in used_cards]
+        if conflicting_cards:
+            async_to_sync(self.channel_layer.send)(
+                self.channel_name,
+                {
+                    'type': 'error',
+                    'message': f"Card(s) already selected: {conflicting_cards}. Please choose different card(s)."
+                }
+            )
+            return
+
+        # User lookup and validation
         user = User.objects.get(id=player_id)
         if not user.is_active:
-            print(user)
             async_to_sync(self.channel_layer.send)(
                 self.channel_name,
                 {
@@ -223,7 +244,9 @@ class GameConsumer(WebsocketConsumer):
                 }
             )
             return
-        if user.wallet < Decimal(self.stake) * len(card_ids):
+
+        total_cost = Decimal(self.stake) * len(card_ids)
+        if user.wallet < total_cost:
             async_to_sync(self.channel_layer.send)(
                 self.channel_name,
                 {
@@ -232,17 +255,22 @@ class GameConsumer(WebsocketConsumer):
                 }
             )
             return
+
+        # Add the player to the selection
         selected_players.append({'user': player_id, 'card': card_ids})
         self.set_selected_players(selected_players)
 
+        # Update player count
         player_count = sum(len(p['card']) for p in selected_players)
         self.set_player_count(player_count)
-        
+
+        # Notify user
         self.send(text_data=json.dumps({
-                    "type": "success",
-                    "message": "Player successfully added and number selected."
-                }))
-        
+            "type": "success",
+            "message": "Player successfully added and cards selected."
+        }))
+
+        # Notify all players
         self.broadcast_player_list()
 
     def remove_player(self, player_id):
