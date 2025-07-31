@@ -761,6 +761,27 @@ class GameConsumer(WebsocketConsumer):
 
         if corner_count == 4:
             winning_numbers.extend([1, 5, 21, 25])
+        
+        inner_corner_count = 0
+        # Check the top-left corner (1, 1)
+        if card[1][1] in called_numbers:
+            inner_corner_count += 1
+    
+        # Check the top-right corner (1, 5)
+        if card[1][3] in called_numbers:
+            inner_corner_count += 1
+    
+        # Check the bottom-left corner (5, 1)
+        if card[3][1] in called_numbers:
+            inner_corner_count += 1
+    
+        # Check the bottom-right corner (5, 5)
+        if card[3][3] in called_numbers:
+            inner_corner_count += 1
+    
+        if inner_corner_count == 4:
+            winning_numbers.extend([7, 9, 17, 19])
+    
 
         return winning_numbers
 
