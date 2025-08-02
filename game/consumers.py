@@ -291,23 +291,41 @@ class GameConsumer(WebsocketConsumer):
         )
 
     def try_start_game(self):
+        from game.models import Game  # adjust this import if needed
+
         current_game_id = self.get_stake_state("current_game_id")
+        current_time = timezone.now()
+
         is_running = self.get_game_state("is_running", current_game_id) if current_game_id else False
         next_game_start = self.get_stake_state("next_game_start")
-        current_time = timezone.now().timestamp()
 
-        if is_running:
-            # Game already running; just inform new users
+        # ✅ Check if running game has expired
+        if is_running and current_game_id:
+            try:
+                current_game = Game.objects.get(id=current_game_id)
+                if current_game.started_at and (current_time - current_game.started_at).total_seconds() > 400:
+                    # Game expired
+                    print(f"Game {current_game_id} has expired (400s). Closing and resetting...")
+                    current_game.played = "closed"  # assuming status is a string field
+                    current_game.save(update_fields=["status"])
+                    self.set_game_state("is_running", False, current_game_id)
+                    current_game_id = None
+                    self.set_stake_state("current_game_id", None)
+            except Game.DoesNotExist:
+                print(f"Game {current_game_id} not found.")
+
+        # 🔁 Re-check if still running after timeout check
+        if current_game_id and self.get_game_state("is_running", current_game_id):
             self.send(text_data=json.dumps({
                 "type": "game_in_progress",
                 "game_id": current_game_id
             }))
             return
 
-        if not next_game_start or next_game_start < current_time:
-            # Schedule new game in 30s
+        # ✅ Start new game if no future schedule exists or time has passed
+        if not next_game_start or next_game_start < current_time.timestamp():
             print("Scheduling new game start in 30s")
-            self.set_stake_state("next_game_start", current_time + 30)
+            self.set_stake_state("next_game_start", current_time.timestamp() + 30)
 
             async_to_sync(self.channel_layer.group_send)(
                 self.room_group_name,
