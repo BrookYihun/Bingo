@@ -130,6 +130,7 @@ class GameConsumer(WebsocketConsumer):
                     'bonus': current_game.bonus,
                     'game_id': current_game.id,
                     "running": True,
+                    "called_numbers": self.get_game_state("called_numbers", current_game_id) or [],
                 }
             else:
                 stats = {
@@ -821,6 +822,7 @@ class GameConsumer(WebsocketConsumer):
             'game_id': event.get('game_id', None),
             'is_running': event.get('is_running', False),
             'remaining_seconds': event.get('remaining_seconds', 0),
+            'called_numbers': event.get('called_numbers', [])
         }))
 
     def game_started(self, event):
