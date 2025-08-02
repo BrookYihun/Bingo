@@ -121,13 +121,12 @@ class GameConsumer(WebsocketConsumer):
                 current_game = Game.objects.get(id=current_game_id)
                 stats = {
                     "type": "game_stat",
-                    "running": is_running,  # True or False
-                    "game_id": current_game.id,
-                    "stake": current_game.stake,
-                    "player_count": self.get_player_count(),
-                    "remaining_seconds": self.get_remaining_time(),  # Optional
-                    "winner_price": current_game.winner_prize,
-                    "bonus": current_game.bonus,
+                    'number_of_players': current_game.numberofplayers,
+                    'stake': current_game.stake,
+                    'winner_price': float(current_game.winner_price),
+                    'bonus': current_game.bonus,
+                    'game_id': current_game.id,
+                    "running": True,
                 }
             else:
                 stats = {
@@ -512,12 +511,13 @@ class GameConsumer(WebsocketConsumer):
         async_to_sync(self.channel_layer.group_send)(
             self.room_group_name,
             {
-                'type': 'game_stats',
+                'type': 'game_stat',
                 'number_of_players': game.numberofplayers,
                 'stake': game.stake,
                 'winner_price': float(game.winner_price),
                 'bonus': game.bonus,
                 'game_id': game.id,
+                "is_running": True,
             }
         )
 
