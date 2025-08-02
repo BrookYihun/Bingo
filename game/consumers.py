@@ -263,6 +263,10 @@ class GameConsumer(WebsocketConsumer):
         selected_players = [p for p in self.get_selected_players() if p['user'] != player_id]
         self.set_selected_players(selected_players)
         self.set_player_count(sum(len(p['card']) for p in selected_players))
+        self.send(text_data=json.dumps({
+            "type": "player_removed",
+            "user_id": player_id
+        }))
         self.broadcast_player_list()
 
     def broadcast_player_list(self):
