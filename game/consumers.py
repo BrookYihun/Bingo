@@ -68,6 +68,9 @@ class GameConsumer(WebsocketConsumer):
             if bingo:
                 self.set_game_state("is_running", False, game_id=data['gameId'])
                 self.set_stake_state("current_game_id", None)
+                self.set_selected_players([])
+                self.set_player_count(0)
+                self.broadcast_player_list()
         
         if data['type'] == 'card_data':
             from game.models import Card
