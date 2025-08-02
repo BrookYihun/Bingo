@@ -47,48 +47,20 @@ class GameConsumer(WebsocketConsumer):
 
         if data['type'] == 'select_number':
 
-            next_game_start = self.get_stake_state("next_game_start")
-            now_ts = timezone.now().timestamp()
-            remaining_seconds = max(0, int(next_game_start - now_ts)) if next_game_start else 0
-            selected_players = self.get_selected_players()
-            all_active_game_ids = self.get_active_games()
-            from game.models import Game
-            valid_active_game_ids = []
-            for game_id in all_active_game_ids:
-                try:
-                    game = Game.objects.get(id=game_id)
-                    if game.numberofplayers > 2:
-                        valid_active_game_ids.append(game_id)
-                except Game.DoesNotExist:
-                    continue
-            if len(valid_active_game_ids) < 2:
-                if not remaining_seconds > 0:
-                    self.try_start_game()
-                self.add_player(data['player_id'], data['card_id'])
-            else:
-                self.try_start_game()
+            current_game_id = self.get_stake_state("current_game_id")
+            is_running = self.get_game_state("is_running", current_game_id) if current_game_id else False
+
+            if is_running:
                 self.send(text_data=json.dumps({
                     "type": "error",
-                    "message": "To many active games wait for next game to start."
+                    "message": "Game already in progress. Please wait for the next round."
                 }))
+                return
+
+            self.add_player(data['player_id'], data['card_id'])
 
         if data['type'] == 'remove_number':
             self.remove_player(data['userId'])
-
-        if data['type']  == 'joined_bingo':
-            user_id = data.get("userId")
-            bingo_page_users = self.get_bingo_page_users()
-            bingo_page_users.add(user_id)
-            self.set_bingo_page_users(bingo_page_users)
-            print(f"User {user_id} joined bingo page for game")
-            next_game_start = self.get_stake_state("next_game_start")
-            now_ts = timezone.now().timestamp()
-
-            remaining_seconds = max(0, int(next_game_start - now_ts)) if next_game_start else 0
-            self.send(text_data=json.dumps({
-                "type": "timer_message",
-                "remaining_seconds": remaining_seconds,
-            }))
         
         if data['type'] == 'bingo':
             async_to_sync(self.checkBingo(int(data['userId']), data['calledNumbers'], data['gameId']))
@@ -170,18 +142,6 @@ class GameConsumer(WebsocketConsumer):
     def set_player_count(self, count):
         self.redis_client.set(f"player_count_{self.stake}", count)
 
-    def get_active_games(self):
-        key = f"active_games_{self.stake}"
-        data = self.redis_client.get(key)
-        return json.loads(data) if data else []
-
-    def set_active_games(self, game_ids):
-        key = f"active_games_{self.stake}"
-        self.redis_client.set(key, json.dumps(game_ids))
-
-    def increment_game_counter(self):
-        return self.redis_client.incr(f"game_counter_{self.stake}")
-    
     def get_game_state(self, key, game_id):
         game_id = game_id
         val = self.redis_client.get(f"game_state_{game_id}_{key}")
@@ -379,11 +339,6 @@ class GameConsumer(WebsocketConsumer):
             daemon=True
         ).start()
 
-        # Reset selections
-        self.set_selected_players([])
-        self.set_player_count(0)
-        self.broadcast_player_list()
-
 
     # # --- Automatic Game Loop ---
     # def auto_game_start_loop(self):
@@ -484,10 +439,10 @@ class GameConsumer(WebsocketConsumer):
         import json
         from game.models import Game
 
-        # Add helper attribute
         self.game_id = game.id
-        self.set_game_state("is_running", True,game.id)
-        self.set_game_state("bingo", False,game.id)
+        self.set_game_state("is_running", True, game.id)
+        self.set_game_state("bingo", False, game.id)
+
         game.played = 'Playing'
         game.save()
 
@@ -500,16 +455,11 @@ class GameConsumer(WebsocketConsumer):
             }
         )
 
-        # Deduct balance only from players in bingo page
         stake_amount = Decimal(game.stake)
         updated_player_cards = []
-        bingo_users = self.get_bingo_page_users()  # Your existing method
 
-        # Step 0: Remove duplicate users (keep only last entry per user)
-        unique_entries = {}
-        for entry in selected_players:
-            unique_entries[entry["user"]] = entry  # Overwrites older entry
-
+        # Remove duplicate users: keep only last submitted entry per user
+        unique_entries = {entry["user"]: entry for entry in selected_players}
         deduplicated_players = list(unique_entries.values())
 
         for entry in deduplicated_players:
@@ -520,24 +470,20 @@ class GameConsumer(WebsocketConsumer):
                 total_deduction = stake_amount * len(flat_cards)
                 user = User.objects.get(id=user_id)
 
-                if user_id in bingo_users:
-                    if user.wallet >= total_deduction:
-                        user.wallet -= total_deduction
-                        user.save()
-                        entry["card"] = flat_cards
-                        updated_player_cards.append(entry)
-                    else:
-                        self.remove_player(user_id)
+                if user.wallet >= total_deduction:
+                    user.wallet -= total_deduction
+                    user.save()
+                    entry["card"] = flat_cards
+                    updated_player_cards.append(entry)
                 else:
                     self.remove_player(user_id)
             except Exception as e:
                 print(f"[Deduction Error] {e}")
 
-        # Update DB
         game.numberofplayers = sum(len(p['card']) for p in updated_player_cards)
         game.playerCard = updated_player_cards
 
-        winner_price = stake_amount * sum(len(p['card']) for p in updated_player_cards)
+        winner_price = stake_amount * game.numberofplayers
         if winner_price >= 100:
             admin_cut = winner_price * Decimal('0.2')
             winner_price -= admin_cut
@@ -557,7 +503,8 @@ class GameConsumer(WebsocketConsumer):
             }
         )
 
-        # Now send random numbers every 5 seconds
+        time.sleep(5)
+        # Broadcast random numbers every 4 seconds
         for num in json.loads(game.random_numbers):
             is_running = self.get_game_state("is_running", game.id)
             bingo = self.get_game_state("bingo", game.id)
@@ -565,7 +512,6 @@ class GameConsumer(WebsocketConsumer):
                 break
 
             with self.lock:
-                # Send the random number to all players in the group only once
                 async_to_sync(self.channel_layer.group_send)(
                     self.room_group_name,
                     {
@@ -575,25 +521,24 @@ class GameConsumer(WebsocketConsumer):
                     }
                 )
 
-                # ✅ Store in Redis
-                called = self.get_game_state("called_numbers",game.id) or []
+                called = self.get_game_state("called_numbers", game.id) or []
                 if not isinstance(called, list):
                     called = []
                 called.append(num)
                 self.set_game_state("called_numbers", called, game.id)
 
             time.sleep(4)
-        # Finish
+
         time.sleep(2)
         game = Game.objects.get(id=game.id)
         game.played = 'closed'
         game.save()
-        self.set_game_state("is_running", False,game.id)
+        self.set_game_state("is_running", False, game.id)
 
-        active_games = self.get_active_games()
-        if self.game_id in active_games:
-            active_games.remove(self.game_id)
-            self.set_active_games(active_games)
+        # Reset selection state
+        self.set_selected_players([])
+        self.set_player_count(0)
+        self.broadcast_player_list()
 
         self.close()
 
