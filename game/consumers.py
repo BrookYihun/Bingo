@@ -25,16 +25,25 @@ class GameConsumer(WebsocketConsumer):
             self.channel_name
         )
 
-        current_game_id = self.get_stake_state("current_game_id")
-        is_running = self.get_game_state("is_running", current_game_id) if current_game_id else False
+        if self.room_group_name == "all":
 
-        if is_running:
             self.send(text_data=json.dumps({
-                "type": "game_in_progress",
-                "game_id": current_game_id
+                "type": "active_game_data",
+                "data": self.get_all_active_games()
             }))
+        
         else:
-            self.try_start_game()
+            current_game_id = self.get_stake_state("current_game_id")
+            is_running = self.get_game_state("is_running", current_game_id) if current_game_id else False
+
+            if is_running:
+                self.send(text_data=json.dumps({
+                    "type": "game_in_progress",
+                    "game_id": current_game_id
+                }))
+            else:
+                self.try_start_game()
+        
 
     def disconnect(self, close_code):
         async_to_sync(self.channel_layer.group_discard)(
@@ -162,6 +171,11 @@ class GameConsumer(WebsocketConsumer):
                     "message": "User ID not provided."
                 }))
 
+        if data['type'] == "fetch_active_game":
+            self.send(text_data=json.dumps({
+                "type": "active_game_data",
+                "data": self.get_all_active_games()
+            }))
 
     # --- Redis state helpers ---
     def get_selected_players(self):
@@ -206,6 +220,74 @@ class GameConsumer(WebsocketConsumer):
         self.set_game_state("is_running", False, game_id=game_id)
         self.set_stake_state("current_game_id", None)
 
+    def get_all_active_games(self):
+        active_games = {}
+        stakes = [10, 20, 30, 40, 50, 100, 150, 200]  # Should match front-end STAKE_DATA
+        from .models import Game
+        from decimal import Decimal
+        for stake in stakes:
+            stake_key = f"stake_state_{stake}_current_game_id"
+            current_game_id = self.redis_client.get(stake_key)
+            current_game_id = json.loads(current_game_id)
+
+            current_time = timezone.now()
+
+            is_running = self.get_game_state("is_running", current_game_id) if current_game_id else False            
+            
+            next_game_start = self.redis_client.get(f"stake_state_{stake}_next_game_start")
+            next_game_start = json.loads(next_game_start)
+
+
+            if is_running and current_game_id:
+                current_game = Game.objects.get(id=current_game_id)
+                if current_game.played == "closed":
+                    active_games[str(stake)] = {
+                        "is_running": False,
+                        "remaining_seconds": 0,
+                        "winner_price": 0,
+                        "bonus": False
+                    }
+                else:
+                    active_games[str(stake)] = {
+                        "is_running": True,
+                        "remaining_seconds": 0,
+                        "winner_price": current_game.winner_price,
+                        "bonus": False
+                    }
+            elif next_game_start < current_time.timestamp():
+                if not next_game_start:
+                    return 0
+                now = time.time()
+                remaining = max(0, int(next_game_start - now))
+                no_p = int(self.redis_client.get(f"player_count_{stake}") or 0)
+                winner = no_p * int(stake)
+                if winner > 100:
+                    winner = Decimal(winner) - (Decimal(winner) * Decimal(0.2))
+                active_games[str(stake)] = {
+                    "is_running": False,
+                    "remaining_seconds": remaining,
+                    "winner_price": winner,
+                    "bonus": False
+                }
+            
+            else:
+                active_games[str(stake)] = {
+                    "is_running": False,
+                    "remaining_seconds": remaining,
+                    "winner_price": 0,
+                    "bonus": False
+                }
+
+        return active_games
+    
+    def broadcast_active_games(self):
+        async_to_sync(self.channel_layer.group_send)(
+            "game_all",
+            {
+                "type": "active_game_data",
+                "data": self.get_all_active_games()
+            }
+        )
 
     # --- Player management ---
     def add_player(self, player_id, card_id):
@@ -337,6 +419,8 @@ class GameConsumer(WebsocketConsumer):
                 "game_id": current_game_id
             }))
             return
+        
+        self.broadcast_active_games()
 
         # ✅ Start new game if no future schedule exists or time has passed
         if not next_game_start or next_game_start < current_time.timestamp():
@@ -350,6 +434,8 @@ class GameConsumer(WebsocketConsumer):
                     'remaining_seconds': 30,
                 }
             )
+
+            self.broadcast_active_games()
 
             def delayed_start():
                 time.sleep(30)
@@ -880,4 +966,10 @@ class GameConsumer(WebsocketConsumer):
         self.send(text_data=json.dumps({
             'type': 'no_cards',
             'message': event['message']
+        }))
+    
+    def active_game_data(self,event):
+        self.send(text_data=json.dumps({
+            'type':'active_game_data',
+            'data':event['data']
         }))
