@@ -255,7 +255,7 @@ class GameConsumer(WebsocketConsumer):
         # Notify user
         self.send(text_data=json.dumps({
             "type": "success",
-            "message": "Player successfully added and cards selected.",
+            "message": "card selected!",
             "card_ids": card_ids
         }))
 
