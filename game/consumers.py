@@ -147,7 +147,7 @@ class GameConsumer(WebsocketConsumer):
                 'player_list': self.get_selected_players()
             }))
         
-        if data[type] == "block_user":
+        if data['type'] == "block_user":
             user_id = data.get("userId")
             if user_id:
                 self.block(user_id)
