@@ -113,18 +113,31 @@ class GameConsumer(WebsocketConsumer):
             return
         
         if data['type'] == "get_stake_stat":
-            # Example response
-            stats = {
-                "type": "game_stat",
-                "stake": self.stake,
-                "player_count": self.get_player_count(),
-                "remaining_seconds": self.get_remaining_time(),  # Optional if timer is running
-            }
+            current_game = self.get_current_game()  # You must implement this to fetch the game object
+            if current_game:
+                stats = {
+                    "type": "game_stat",
+                    "running": current_game.is_running,  # True or False
+                    "game_id": current_game.id,
+                    "stake": current_game.stake,
+                    "player_count": self.get_player_count(),
+                    "remaining_seconds": self.get_remaining_time(),  # Optional
+                    "winner_price": current_game.winner_prize,
+                    "bonus": current_game.bonus,
+                }
+            else:
+                stats = {
+                    "type": "game_stat",
+                    "running": False,
+                    "message": "No game is currently running."
+                }
+
             self.send(text_data=json.dumps(stats))
             self.send(text_data=json.dumps({
                 'type': 'player_list',
                 'player_list': self.get_selected_players()
             }))
+
 
     # --- Redis state helpers ---
     def get_selected_players(self):
