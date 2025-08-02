@@ -20,19 +20,21 @@ class GameConsumer(WebsocketConsumer):
         self.room_group_name = f'game_{self.stake}'
         self.accept()
 
-        # Join group
         async_to_sync(self.channel_layer.group_add)(
             self.room_group_name,
             self.channel_name
         )
-        # # Start game scheduler only once per stake
-        # with self.lock:
-        #     if self.stake not in self.game_threads_started:
-        #         threading.Thread(target=self.auto_game_start_loop, daemon=True).start()
-        #         self.game_threads_started.add(self.stake)
-        #         print(f"Started game loop for stake {self.stake}")
 
-        self.try_start_game()
+        current_game_id = self.get_stake_state("current_game_id")
+        is_running = self.get_game_state("is_running", current_game_id) if current_game_id else False
+
+        if is_running:
+            self.send(text_data=json.dumps({
+                "type": "game_in_progress",
+                "game_id": current_game_id
+            }))
+        else:
+            self.try_start_game()
 
     def disconnect(self, close_code):
         async_to_sync(self.channel_layer.group_discard)(
@@ -92,7 +94,8 @@ class GameConsumer(WebsocketConsumer):
             async_to_sync(self.checkBingo(int(data['userId']), data['calledNumbers'], data['gameId']))
             bingo = self.get_game_state("bingo", game_id=data['gameId'])
             if bingo:
-                self.set_game_state("is_running",False, game_id=data['gameId'])
+                self.set_game_state("is_running", False, game_id=data['gameId'])
+                self.set_stake_state("current_game_id", None)
         
         if data['type'] == 'card_data':
             from game.models import Card
@@ -201,6 +204,10 @@ class GameConsumer(WebsocketConsumer):
 
     def set_bingo_page_users(self, users):
         self.redis_client.set(f"bingo_page_users_{self.stake}", json.dumps(list(users)))
+    
+    def end_game(self, game_id):
+        self.set_game_state("is_running", False, game_id=game_id)
+        self.set_stake_state("current_game_id", None)
 
 
     # --- Player management ---
@@ -296,29 +303,26 @@ class GameConsumer(WebsocketConsumer):
                 'remaining_seconds': self.get_remaining_time()
             }
         )
+
     def try_start_game(self):
-        selected_players = self.get_selected_players()
-        all_active_game_ids = self.get_active_games()
-    
-        # Filter out games that have 2 or fewer players
-        from game.models import Game
-        valid_active_game_ids = []
-        for game_id in all_active_game_ids:
-            try:
-                game = Game.objects.get(id=game_id)
-                if game.numberofplayers > 2:
-                    valid_active_game_ids.append(game_id)
-            except Game.DoesNotExist:
-                continue
-    
+        current_game_id = self.get_stake_state("current_game_id")
+        is_running = self.get_game_state("is_running", current_game_id) if current_game_id else False
         next_game_start = self.get_stake_state("next_game_start")
         current_time = timezone.now().timestamp()
-    
-        # Start a new game only if fewer than 2 valid active games exist
-        if len(valid_active_game_ids) < 2 and (not next_game_start or next_game_start < current_time):
+
+        if is_running:
+            # Game already running; just inform new users
+            self.send(text_data=json.dumps({
+                "type": "game_in_progress",
+                "game_id": current_game_id
+            }))
+            return
+
+        if not next_game_start or next_game_start < current_time:
+            # Schedule new game in 30s
             print("Scheduling new game start in 30s")
             self.set_stake_state("next_game_start", current_time + 30)
-    
+
             async_to_sync(self.channel_layer.group_send)(
                 self.room_group_name,
                 {
@@ -326,26 +330,22 @@ class GameConsumer(WebsocketConsumer):
                     'remaining_seconds': 30,
                 }
             )
-    
+
             def delayed_start():
                 time.sleep(30)
                 self._start_game_logic()
-    
+
             threading.Thread(target=delayed_start, daemon=True).start()
-            
+
     def _start_game_logic(self):
         from game.models import Game
         from django.utils import timezone
 
         selected_players = self.get_selected_players()
-
         if not selected_players:
-            return  # or raise an exception, or log a warning
-            # Build the playerCard map
-        player_card_map = {
-            str(p['user']): p['card'] for p in selected_players
-        }
+            return
 
+        player_card_map = {str(p['user']): p['card'] for p in selected_players}
         new_game = Game.objects.create(
             stake=self.stake,
             numberofplayers=sum(len(c) for c in player_card_map.values()),
@@ -360,10 +360,8 @@ class GameConsumer(WebsocketConsumer):
         new_game.save()
         print(f"New game created with ID: {new_game.id}")
 
-        # Update Redis and broadcast
-        active_games = self.get_active_games()
-        active_games.append(new_game.id)
-        self.set_active_games(active_games)
+        self.set_game_state("is_running", True, game_id=new_game.id)
+        self.set_stake_state("current_game_id", new_game.id)
 
         async_to_sync(self.channel_layer.group_send)(
             self.room_group_name,
@@ -381,12 +379,11 @@ class GameConsumer(WebsocketConsumer):
             daemon=True
         ).start()
 
-        # Reset for next round
+        # Reset selections
         self.set_selected_players([])
         self.set_player_count(0)
         self.broadcast_player_list()
 
-        self.try_start_game()  # Check if another game can be started immediately
 
     # # --- Automatic Game Loop ---
     # def auto_game_start_loop(self):
