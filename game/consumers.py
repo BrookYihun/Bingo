@@ -37,14 +37,38 @@ class GameConsumer(WebsocketConsumer):
             is_running = self.get_game_state("is_running", current_game_id) if current_game_id else False
 
             if is_running:
+                from game.models import Game
+                current_game = Game.objects.get(id=current_game_id)
+                stats = {
+                    "type": "game_stat",
+                    'number_of_players': current_game.numberofplayers,
+                    'stake': current_game.stake,
+                    'winner_price': float(current_game.winner_price),
+                    'bonus': current_game.bonus,
+                    'game_id': current_game.id,
+                    "running": True,
+                    "called_numbers": self.get_game_state("called_numbers", current_game_id) or [],
+                }
                 self.send(text_data=json.dumps({
                     "type": "game_in_progress",
                     "game_id": current_game_id
                 }))
             else:
                 self.try_start_game()
-        
+                stats = {
+                    "type": "game_stat",
+                    "running": False,
+                    "message": "No game is currently running.",
+                    "number_of_players": self.get_player_count(),
+                    "remaining_seconds": self.get_remaining_time(),
+                }
 
+            self.send(text_data=json.dumps(stats))
+            self.send(text_data=json.dumps({
+                'type': 'player_list',
+                'player_list': self.get_selected_players()
+            }))
+                
     def disconnect(self, close_code):
         async_to_sync(self.channel_layer.group_discard)(
             self.room_group_name,
