@@ -609,8 +609,6 @@ class GameConsumer(WebsocketConsumer):
         self.set_player_count(0)
         self.broadcast_player_list()
 
-        self.close()
-
     def checkBingo(self, user_id, calledNumbers, game_id):
         from game.models import Card, Game
         from custom_auth.models import User
