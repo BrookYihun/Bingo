@@ -145,6 +145,21 @@ class GameConsumer(WebsocketConsumer):
                 'type': 'player_list',
                 'player_list': self.get_selected_players()
             }))
+        
+        if data[type] == "block_user":
+            user_id = data.get("userId")
+            if user_id:
+                self.block(user_id)
+                self.remove_player(user_id)
+                self.send(text_data=json.dumps({
+                    "type": "user_blocked",
+                    "message": f"User {user_id} has been blocked."
+                }))
+            else:
+                self.send(text_data=json.dumps({
+                    "type": "error",
+                    "message": "User ID not provided."
+                }))
 
 
     # --- Redis state helpers ---
@@ -779,6 +794,15 @@ class GameConsumer(WebsocketConsumer):
     
 
         return winning_numbers
+
+    def block(self, user_id):
+        from game.models import Game
+        last_game = Game.objects.get(id=self.game_id)
+        players = json.loads(last_game.playerCard)
+        updated_list = [item for item in players if int(item['user']) != user_id]
+        last_game.playerCard = json.dumps(updated_list)
+        last_game.numberofplayers = len(updated_list)
+        last_game.save()
 
     # --- WebSocket Handlers ---
     def update_player_list(self, event):
