@@ -121,7 +121,7 @@ class GameConsumer(WebsocketConsumer):
                 current_game = Game.objects.get(id=current_game_id)
                 stats = {
                     "type": "game_stat",
-                    "running": current_game.is_running,  # True or False
+                    "running": is_running,  # True or False
                     "game_id": current_game.id,
                     "stake": current_game.stake,
                     "player_count": self.get_player_count(),
@@ -251,7 +251,8 @@ class GameConsumer(WebsocketConsumer):
         # Notify user
         self.send(text_data=json.dumps({
             "type": "success",
-            "message": "Player successfully added and cards selected."
+            "message": "Player successfully added and cards selected.",
+            "card_ids": card_ids
         }))
 
         # Notify all players
