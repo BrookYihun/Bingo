@@ -321,7 +321,15 @@ class GameConsumer(WebsocketConsumer):
         from django.utils import timezone
 
         selected_players = self.get_selected_players()
-        if not selected_players:
+        if not selected_players or len(selected_players) < 2:
+            async_to_sync(self.channel_layer.group_send)(
+                self.room_group_name,
+                {
+                    'type': 'error',
+                    'message': 'Not enough players selected. Cannot start game.'
+                }
+            )
+            self.try_start_game()
             return
 
         player_card_map = {str(p['user']): p['card'] for p in selected_players}
