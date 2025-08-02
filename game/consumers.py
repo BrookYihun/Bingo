@@ -113,8 +113,12 @@ class GameConsumer(WebsocketConsumer):
             return
         
         if data['type'] == "get_stake_stat":
-            current_game = self.get_current_game()  # You must implement this to fetch the game object
-            if current_game:
+            current_game_id = self.get_stake_state("current_game_id")
+            is_running = self.get_game_state("is_running", current_game_id) if current_game_id else False
+
+            if is_running:
+                from game.models import Game
+                current_game = Game.objects.get(id=current_game_id)
                 stats = {
                     "type": "game_stat",
                     "running": current_game.is_running,  # True or False
