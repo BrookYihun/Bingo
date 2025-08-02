@@ -757,6 +757,10 @@ class GameConsumer(WebsocketConsumer):
             'type': 'game_stat',
             'number_of_players': event['number_of_players'],
             'stake': event['stake'],
+            'winner_price': event.get('winner_price', 0),
+            'bonus': event.get('bonus', 0),
+            'game_id': event.get('game_id', None),
+            'is_running': event.get('is_running', False),
             'remaining_seconds': event.get('remaining_seconds', 0),
         }))
 
