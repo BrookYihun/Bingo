@@ -132,7 +132,9 @@ class GameConsumer(WebsocketConsumer):
                 stats = {
                     "type": "game_stat",
                     "running": False,
-                    "message": "No game is currently running."
+                    "message": "No game is currently running.",
+                    "number_of_players": self.get_player_count(),
+                    "remaining_seconds": self.get_remaining_time(),
                 }
 
             self.send(text_data=json.dumps(stats))
