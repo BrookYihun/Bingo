@@ -279,7 +279,7 @@ class GameConsumer(WebsocketConsumer):
                         "winner_price": current_game.winner_price,
                         "bonus": False
                     }
-            elif next_game_start:
+            elif next_game_start is not None:
                 if next_game_start < current_time.timestamp():
                     now = time.time()
                     remaining = max(0, int(next_game_start - now))
@@ -455,7 +455,6 @@ class GameConsumer(WebsocketConsumer):
 
         # ✅ Start new game if no future schedule exists or time has passed
         if not next_game_start or next_game_start < current_time.timestamp():
-            print("Scheduling new game start in 30s")
             self.set_stake_state("next_game_start", current_time.timestamp() + 30)
 
             async_to_sync(self.channel_layer.group_send)(
