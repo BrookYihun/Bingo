@@ -278,26 +278,32 @@ class GameConsumer(WebsocketConsumer):
                         "winner_price": current_game.winner_price,
                         "bonus": False
                     }
-            elif next_game_start < current_time.timestamp():
-                if not next_game_start:
-                    return 0
-                now = time.time()
-                remaining = max(0, int(next_game_start - now))
-                no_p = int(self.redis_client.get(f"player_count_{stake}") or 0)
-                winner = no_p * int(stake)
-                if winner > 100:
-                    winner = Decimal(winner) - (Decimal(winner) * Decimal(0.2))
-                active_games[str(stake)] = {
-                    "is_running": False,
-                    "remaining_seconds": remaining,
-                    "winner_price": winner,
-                    "bonus": False
-                }
+            elif next_game_start:
+                if next_game_start < current_time.timestamp():
+                    now = time.time()
+                    remaining = max(0, int(next_game_start - now))
+                    no_p = int(self.redis_client.get(f"player_count_{stake}") or 0)
+                    winner = no_p * int(stake)
+                    if winner > 100:
+                        winner = Decimal(winner) - (Decimal(winner) * Decimal(0.2))
+                    active_games[str(stake)] = {
+                        "is_running": False,
+                        "remaining_seconds": remaining,
+                        "winner_price": winner,
+                        "bonus": False
+                    }
+                else:
+                    active_games[str(stake)] = {
+                        "is_running": False,
+                        "remaining_seconds": 0,
+                        "winner_price": 0,
+                        "bonus": False
+                    }
             
             else:
                 active_games[str(stake)] = {
                     "is_running": False,
-                    "remaining_seconds": remaining,
+                    "remaining_seconds": 0,
                     "winner_price": 0,
                     "bonus": False
                 }
