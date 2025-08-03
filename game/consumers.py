@@ -486,7 +486,8 @@ class GameConsumer(WebsocketConsumer):
                     'message': 'Not enough players selected. Cannot start game.'
                 }
             )
-            self.try_start_game()
+            if len(selected_players) != 0:
+                self.try_start_game()
             return
 
         player_card_map = {str(p['user']): p['card'] for p in selected_players}
