@@ -252,14 +252,14 @@ class GameConsumer(WebsocketConsumer):
         for stake in stakes:
             stake_key = f"stake_state_{stake}_current_game_id"
             current_game_id = self.redis_client.get(stake_key)
-            current_game_id = json.loads(current_game_id)
+            current_game_id = json.loads(current_game_id) if current_game_id else None
 
             current_time = timezone.now()
 
             is_running = self.get_game_state("is_running", current_game_id) if current_game_id else False            
             
             next_game_start = self.redis_client.get(f"stake_state_{stake}_next_game_start")
-            next_game_start = json.loads(next_game_start)
+            next_game_start = json.loads(next_game_start) if next_game_start else None
 
 
             if is_running and current_game_id:
