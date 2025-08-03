@@ -261,7 +261,7 @@ class GameConsumer(WebsocketConsumer):
             next_game_start = self.redis_client.get(f"stake_state_{stake}_next_game_start")
             next_game_start = json.loads(next_game_start) if next_game_start else None
 
-            print(next_game_start)
+            print(f"next game start for {stake} in {next_game_start}")
 
             if is_running and current_game_id:
                 current_game = Game.objects.get(id=current_game_id)
