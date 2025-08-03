@@ -281,7 +281,7 @@ class GameConsumer(WebsocketConsumer):
                     }
             elif next_game_start is not None:
                 if next_game_start < current_time.timestamp():
-                    now = time.time()
+                    now = current_time.timestamp()
                     remaining = int(next_game_start - now)
                     print(f"Remaining time for {stake}: {remaining} seconds")
                     no_p = int(self.redis_client.get(f"player_count_{stake}") or 0)
