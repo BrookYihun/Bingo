@@ -280,7 +280,7 @@ class GameConsumer(WebsocketConsumer):
                         "bonus": False
                     }
             elif next_game_start is not None:
-                if next_game_start < current_time.timestamp():
+                if next_game_start > current_time.timestamp():
                     now = current_time.timestamp()
                     remaining = int(next_game_start - now)
                     print(f"Remaining time for {stake}: {remaining} seconds")
