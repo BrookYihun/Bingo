@@ -246,76 +246,94 @@ class GameConsumer(WebsocketConsumer):
 
     def get_all_active_games(self):
         from .models import Game
-        from decimal import Decimal
         from django.utils import timezone
+        try:
+            active_games = {}
+            stakes = [10, 20, 30, 40, 50, 100, 150, 200]
 
-        active_games = {}
-        stakes = [10, 20, 30, 40, 50, 100, 150, 200]
+            current_time = timezone.now()
+            current_timestamp = current_time.timestamp()
 
-        current_time = timezone.now()
-        current_timestamp = current_time.timestamp()
+            for stake in stakes:
+                stake_str = str(stake)
+                stake_key = f"stake_state_{stake}_current_game_id"
+                next_start_key = f"stake_state_{stake}_next_game_start"
+                player_count_key = f"player_count_{stake}"
 
-        for stake in stakes:
-            stake_str = str(stake)
-            stake_key = f"stake_state_{stake}_current_game_id"
-            next_start_key = f"stake_state_{stake}_next_game_start"
-            player_count_key = f"player_count_{stake}"
+                current_game_id = self.redis_client.get(stake_key)
+                current_game_id = json.loads(current_game_id) if current_game_id else None
 
-            current_game_id = self.redis_client.get(stake_key)
-            current_game_id = json.loads(current_game_id) if current_game_id else None
+                next_game_start = self.redis_client.get(next_start_key)
+                next_game_start = json.loads(next_game_start) if next_game_start else None
 
-            next_game_start = self.redis_client.get(next_start_key)
-            next_game_start = json.loads(next_game_start) if next_game_start else None
+                is_running = self.get_game_state("is_running", current_game_id) if current_game_id else False
 
-            is_running = self.get_game_state("is_running", current_game_id) if current_game_id else False
+                if is_running and current_game_id:
+                    try:
+                        current_game = Game.objects.get(id=current_game_id)
+                    except Game.DoesNotExist:
+                        active_games[stake_str] = {
+                            "is_running": False,
+                            "remaining_seconds": 0,
+                            "winner_price": 0,
+                            "bonus": False,
+                        }
+                        continue
 
-            if is_running and current_game_id:
-                try:
-                    current_game = Game.objects.get(id=current_game_id)
-                except Game.DoesNotExist:
+                    if current_game.played == "closed":
+                        active_games[stake_str] = {
+                            "is_running": False,
+                            "remaining_seconds": 0,
+                            "winner_price": 0,
+                            "bonus": False,
+                        }
+                    else:
+                        active_games[stake_str] = {
+                            "is_running": True,
+                            "remaining_seconds": 0,
+                            "winner_price": float(current_game.winner_price),
+                            "bonus": False,
+                        }
+
+                elif next_game_start and next_game_start > current_timestamp:
+                    remaining = int(next_game_start - current_timestamp)
+                    no_p = int(self.redis_client.get(player_count_key) or 0)
+                    winner = self.calculate_winner_price(no_p, stake)
+
                     active_games[stake_str] = {
                         "is_running": False,
-                        "remaining_seconds": 0,
-                        "winner_price": 0,
-                        "bonus": False,
-                    }
-                    continue
-
-                if current_game.played == "closed":
-                    active_games[stake_str] = {
-                        "is_running": False,
-                        "remaining_seconds": 0,
-                        "winner_price": 0,
+                        "remaining_seconds": remaining,
+                        "winner_price": winner,
                         "bonus": False,
                     }
                 else:
                     active_games[stake_str] = {
-                        "is_running": True,
+                        "is_running": False,
                         "remaining_seconds": 0,
-                        "winner_price": current_game.winner_price,
+                        "winner_price": 0,
                         "bonus": False,
                     }
-
-            elif next_game_start and next_game_start > current_timestamp:
-                remaining = int(next_game_start - current_timestamp)
-                no_p = int(self.redis_client.get(player_count_key) or 0)
-                winner = self.calculate_winner_price(no_p, stake)
-
-                active_games[stake_str] = {
-                    "is_running": False,
-                    "remaining_seconds": remaining,
-                    "winner_price": winner,
-                    "bonus": False,
-                }
-            else:
-                active_games[stake_str] = {
-                    "is_running": False,
-                    "remaining_seconds": 0,
-                    "winner_price": 0,
-                    "bonus": False,
-                }
+        except Exception as e:
+            print(f"Error fetching active games for stake {stake}: {e}")
 
         return active_games
+    
+    def safe_float(self, val):
+        try:
+            return float(val)
+        except Exception:
+            return 0.0
+
+    def sanitize_data(self, data):
+        from decimal import Decimal
+        if isinstance(data, dict):
+            return {k: self.sanitize_data(v) for k, v in data.items()}
+        elif isinstance(data, list):
+            return [self.sanitize_data(v) for v in data]
+        elif isinstance(data, Decimal):
+            return self.safe_float(data)
+        else:
+            return data
 
     def calculate_winner_price(self, no_p, stake):
         try:
