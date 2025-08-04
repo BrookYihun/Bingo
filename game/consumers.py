@@ -245,72 +245,95 @@ class GameConsumer(WebsocketConsumer):
         self.set_stake_state("current_game_id", None)
 
     def get_all_active_games(self):
-        active_games = {}
-        stakes = [10, 20, 30, 40, 50, 100, 150, 200]  # Should match front-end STAKE_DATA
         from .models import Game
         from decimal import Decimal
+        from django.utils import timezone
+
+        active_games = {}
+        stakes = [10, 20, 30, 40, 50, 100, 150, 200]
+
+        current_time = timezone.now()
+        current_timestamp = current_time.timestamp()
+
         for stake in stakes:
+            stake_str = str(stake)
             stake_key = f"stake_state_{stake}_current_game_id"
+            next_start_key = f"stake_state_{stake}_next_game_start"
+            player_count_key = f"player_count_{stake}"
+
             current_game_id = self.redis_client.get(stake_key)
             current_game_id = json.loads(current_game_id) if current_game_id else None
 
-            current_time = timezone.now()
-
-            is_running = self.get_game_state("is_running", current_game_id) if current_game_id else False            
-            
-            next_game_start = self.redis_client.get(f"stake_state_{stake}_next_game_start")
+            next_game_start = self.redis_client.get(next_start_key)
             next_game_start = json.loads(next_game_start) if next_game_start else None
 
-            print(f"next game start for {stake} in {next_game_start}")
+            is_running = self.get_game_state("is_running", current_game_id) if current_game_id else False
 
             if is_running and current_game_id:
-                current_game = Game.objects.get(id=current_game_id)
-                if current_game.played == "closed":
-                    active_games[str(stake)] = {
+                try:
+                    current_game = Game.objects.get(id=current_game_id)
+                except Game.DoesNotExist:
+                    active_games[stake_str] = {
                         "is_running": False,
                         "remaining_seconds": 0,
                         "winner_price": 0,
-                        "bonus": False
+                        "bonus": False,
+                    }
+                    continue
+
+                if current_game.played == "closed":
+                    active_games[stake_str] = {
+                        "is_running": False,
+                        "remaining_seconds": 0,
+                        "winner_price": 0,
+                        "bonus": False,
                     }
                 else:
-                    active_games[str(stake)] = {
+                    active_games[stake_str] = {
                         "is_running": True,
                         "remaining_seconds": 0,
                         "winner_price": current_game.winner_price,
-                        "bonus": False
+                        "bonus": False,
                     }
-            elif next_game_start is not None:
-                if next_game_start > current_time.timestamp():
-                    now = current_time.timestamp()
-                    remaining = int(next_game_start - now)
-                    print(f"Remaining time for {stake}: {remaining} seconds")
-                    no_p = int(self.redis_client.get(f"player_count_{stake}") or 0)
-                    winner = no_p * int(stake)
-                    if winner > 100:
-                        winner = Decimal(winner) - (Decimal(winner) * Decimal(0.2))
-                    active_games[str(stake)] = {
-                        "is_running": False,
-                        "remaining_seconds": remaining,
-                        "winner_price": winner,
-                        "bonus": False
-                    }
-                else:
-                    active_games[str(stake)] = {
-                        "is_running": False,
-                        "remaining_seconds": 0,
-                        "winner_price": 0,
-                        "bonus": False
-                    }
-            
+
+            elif next_game_start and next_game_start > current_timestamp:
+                remaining = int(next_game_start - current_timestamp)
+                no_p = int(self.redis_client.get(player_count_key) or 0)
+                winner = self.calculate_winner_price(no_p, stake)
+
+                active_games[stake_str] = {
+                    "is_running": False,
+                    "remaining_seconds": remaining,
+                    "winner_price": winner,
+                    "bonus": False,
+                }
             else:
-                active_games[str(stake)] = {
+                active_games[stake_str] = {
                     "is_running": False,
                     "remaining_seconds": 0,
                     "winner_price": 0,
-                    "bonus": False
+                    "bonus": False,
                 }
 
         return active_games
+
+    def calculate_winner_price(self, no_p, stake):
+        try:
+            no_p = float(no_p)
+            stake = float(stake)
+            winner = no_p * stake
+
+            if winner > 100:
+                winner -= (winner * 0.2)
+
+            # Optional: round to 2 decimal places
+            winner = round(winner, 2)
+
+            return winner
+
+        except (ValueError, TypeError) as e:
+            print(f"Error calculating winner price: {e}")
+            return 0.0
     
     def broadcast_active_games(self):
         async_to_sync(self.channel_layer.group_send)(
@@ -487,8 +510,7 @@ class GameConsumer(WebsocketConsumer):
                     'message': 'Not enough players selected. Cannot start game.'
                 }
             )
-            if len(selected_players) != 0:
-                self.try_start_game()
+            self.try_start_game()
             return
 
         player_card_map = {str(p['user']): p['card'] for p in selected_players}
@@ -716,7 +738,6 @@ class GameConsumer(WebsocketConsumer):
 
             time.sleep(4)
 
-        time.sleep(2)
         game = Game.objects.get(id=game.id)
         game.played = 'closed'
         game.save()
@@ -726,6 +747,7 @@ class GameConsumer(WebsocketConsumer):
         self.set_selected_players([])
         self.set_player_count(0)
         self.broadcast_player_list()
+        self.try_start_game()
 
     def checkBingo(self, user_id, calledNumbers, game_id):
         from game.models import Card, Game
