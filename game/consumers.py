@@ -698,7 +698,7 @@ class GameConsumer(WebsocketConsumer):
 
                 if user.wallet >= total_deduction:
                     user.wallet -= total_deduction
-                    user.no_of_games_played += 1
+                    # user.no_of_games_played += 1
                     user.save()
                     entry["card"] = flat_cards
                     updated_player_cards.append(entry)
