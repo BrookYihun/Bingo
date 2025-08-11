@@ -714,10 +714,18 @@ class GameConsumer(WebsocketConsumer):
         game.playerCard = updated_player_cards
 
         winner_price = stake_amount * game.numberofplayers
+
         if winner_price >= 100:
-            admin_cut = winner_price * Decimal('0.2')
+            admin_cut = winner_price * Decimal('0.2')  # 20%
             winner_price -= admin_cut
             game.admin_cut = admin_cut
+        elif 50 <= winner_price < 100:
+            admin_cut = winner_price * Decimal('0.1')  # 10%
+            winner_price -= admin_cut
+            game.admin_cut = admin_cut
+        else:
+            game.admin_cut = Decimal('0')
+        
         game.winner_price = winner_price
         game.save()
 
