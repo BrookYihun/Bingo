@@ -699,7 +699,7 @@ class GameConsumer(WebsocketConsumer):
                 if user.wallet >= total_deduction:
                     user.wallet -= total_deduction
                     try:
-                        user.no_of_games_played += 1
+                        user.no_of_games_played = (user.no_of_games_played or 0) + 1
                     except AttributeError:
                         print(f"User {user_id} does not have 'no_of_games_played' field, skipping increment.")
                     user.save()
