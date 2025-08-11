@@ -48,12 +48,14 @@ class AbstractUser(AbstractBaseUser,PermissionsMixin):
 
     def __str__(self):
         return self.phone_number
-    
-# User model with specific fields
 class User(AbstractUser):
-    wallet = models.DecimalField(max_digits=10, decimal_places=2,default=0)
-    bonus = models.DecimalField(max_digits=10,decimal_places=2,default=0)
+    wallet = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    bonus = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    last_withdraw_date = models.DateField(null=True, blank=True)
+    no_of_cash_deposited = models.PositiveIntegerField(default=0)
+    no_of_games_played = models.PositiveIntegerField(default=0)
+    reserved_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    total_withdraw_amount_per_day = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
     def __str__(self):
-        return self.name
-
+        return self.username  # Or self.get_full_name() if you want full name
