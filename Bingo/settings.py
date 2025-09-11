@@ -18,6 +18,7 @@ ALLOWED_HOSTS = [
     '5.75.175.113',
     '91.98.86.196',
     'ntbingo.com',
+    'https://ntbingo.com',
     'dallolbingo.com',
     'www.dallolbingo.com',
     'https://www.dallolbingo.com',
@@ -33,6 +34,7 @@ CORS_ALLOWED_ORIGINS = [
     'http://www.dallolbingo.com',
     'https://www.dallolbingo.com',
     'http://localhost:3000',
+    'https://ntbingo.com',
     # Add other origins as needed
 ]
 
@@ -43,6 +45,7 @@ CSRF_TRUSTED_ORIGINS = [
     'http://www.dallolbingo.com',
     'https://www.dallolbingo.com',
     'http://localhost:3000',
+    'https://ntbingo.com',
 ]
 
 # Application definition
