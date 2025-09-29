@@ -1,11 +1,15 @@
 import json
 import threading
 import time
+import random
+
+from django.template.defaultfilters import lower
 from django.utils import timezone
 from channels.generic.websocket import WebsocketConsumer
 from asgiref.sync import async_to_sync
 import redis
 import uuid
+
 
 class GameConsumer(WebsocketConsumer):
     redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
@@ -14,6 +18,44 @@ class GameConsumer(WebsocketConsumer):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+    def regenerate_card_numbers(self,card):
+        new_card=[]
+        used_numbers=set()
+
+        for i in range(5):
+            row=[]
+            for j in range(5):
+                if 1==2 and j==2:
+                    row.append(0)
+                else:
+                    lower_bound=j*15+1
+                    upper_bound=(j+1)*15
+                    num=random.randint(lower_bound,upper_bound)
+                    while num in used_numbers:
+                        num=random.randint(lower_bound,upper_bound)
+                    used_numbers.add(num)
+                    row.append(num)
+            new_card.append(row)
+        card.numbers=json.dumps(new_card)
+        card.save(update_fields=['numbers'])
+        return new_card
+
+
+    def regenerate_all_cards(self):
+        from game.models import Card
+        cards=Card.objects.all()
+        total=cards.count()
+        print(f"[Regen] 🔄 Starting regeneration of {total} cards... ")
+
+        for i, card in enumerate(cards,1):
+            self.regenerate_card_numbers(card)
+            if i % 100==0:
+                print(f"[Regen] {i}/{total} cards regenerated...")
+        print(f"[Regen] ✅ All {total} cards regenerated successfully.")
+
+
+
 
     def connect(self):
         self.stake = self.scope['url_route']['kwargs']['stake']
@@ -31,7 +73,7 @@ class GameConsumer(WebsocketConsumer):
                 "type": "active_game_data",
                 "data": self.get_all_active_games()
             }))
-        
+
         else:
             current_game_id = self.get_stake_state("current_game_id")
             is_running = self.get_game_state("is_running", current_game_id) if current_game_id else False
@@ -68,7 +110,7 @@ class GameConsumer(WebsocketConsumer):
                 'type': 'player_list',
                 'player_list': self.get_selected_players()
             }))
-                
+
     def disconnect(self, close_code):
         async_to_sync(self.channel_layer.group_discard)(
             self.room_group_name,
@@ -76,7 +118,22 @@ class GameConsumer(WebsocketConsumer):
         )
 
     def receive(self, text_data):
-        data = json.loads(text_data)
+        # Handle empty or None messages
+        if not text_data or text_data.strip() == "":
+            self.send(text_data=json.dumps({
+                "type": "error",
+                "message": "Empty message received."
+            }))
+            return
+
+        try:
+            data = json.loads(text_data)
+        except json.JSONDecodeError:
+            self.send(text_data=json.dumps({
+                "type": "error",
+                "message": "Invalid JSON format."
+            }))
+            return
 
         if data['type'] == 'select_number':
 
@@ -94,7 +151,7 @@ class GameConsumer(WebsocketConsumer):
 
         if data['type'] == 'remove_number':
             self.remove_player(data['userId'])
-        
+
         if data['type'] == 'bingo':
             async_to_sync(self.checkBingo(int(data['userId']), data['calledNumbers'], data['gameId']))
             bingo = self.get_game_state("bingo", game_id=data['gameId'])
@@ -104,10 +161,10 @@ class GameConsumer(WebsocketConsumer):
                 self.set_selected_players([])
                 self.set_player_count(0)
                 self.broadcast_player_list()
-        
+
         if data['type'] == 'card_data':
             from game.models import Card
-            
+
             user_cards = []
             selected_players = self.get_selected_players()
             for player in selected_players:
@@ -120,6 +177,7 @@ class GameConsumer(WebsocketConsumer):
                                     yield from flatten(item)
                                 else:
                                     yield int(item)
+
                         user_cards = list(flatten(cards_field))
                     else:
                         user_cards = [int(cards_field)]
@@ -147,7 +205,7 @@ class GameConsumer(WebsocketConsumer):
                 "cards": bingo_table_data
             }))
             return
-        
+
         if data['type'] == "get_stake_stat":
             current_game_id = self.get_stake_state("current_game_id")
             is_running = self.get_game_state("is_running", current_game_id) if current_game_id else False
@@ -179,7 +237,7 @@ class GameConsumer(WebsocketConsumer):
                 'type': 'player_list',
                 'player_list': self.get_selected_players()
             }))
-        
+
         if data['type'] == "block_user":
             user_id = data.get("userId")
             if user_id:
@@ -225,21 +283,21 @@ class GameConsumer(WebsocketConsumer):
     def set_game_state(self, key, value, game_id):
         game_id = game_id
         self.redis_client.set(f"game_state_{game_id}_{key}", json.dumps(value))
-    
+
     def get_stake_state(self, key):
         val = self.redis_client.get(f"stake_state_{self.stake}_{key}")
         return json.loads(val) if val else None
-    
+
     def set_stake_state(self, key, value):
         self.redis_client.set(f"stake_state_{self.stake}_{key}", json.dumps(value))
-    
+
     def get_bingo_page_users(self):
         data = self.redis_client.get(f"bingo_page_users_{self.stake}")
         return set(json.loads(data)) if data else set()
 
     def set_bingo_page_users(self, users):
         self.redis_client.set(f"bingo_page_users_{self.stake}", json.dumps(list(users)))
-    
+
     def end_game(self, game_id):
         self.set_game_state("is_running", False, game_id=game_id)
         self.set_stake_state("current_game_id", None)
@@ -317,7 +375,7 @@ class GameConsumer(WebsocketConsumer):
             print(f"Error fetching active games for stake {stake}: {e}")
 
         return active_games
-    
+
     def safe_float(self, val):
         try:
             return float(val)
@@ -352,7 +410,7 @@ class GameConsumer(WebsocketConsumer):
         except (ValueError, TypeError) as e:
             print(f"Error calculating winner price: {e}")
             return 0.0
-    
+
     def broadcast_active_games(self):
         async_to_sync(self.channel_layer.group_send)(
             "game_all",
@@ -368,7 +426,7 @@ class GameConsumer(WebsocketConsumer):
         from decimal import Decimal
 
         selected_players = self.get_selected_players()
-        
+
         # Remove existing entry for this user (if re-adding)
         selected_players = [p for p in selected_players if p['user'] != player_id]
 
@@ -405,7 +463,9 @@ class GameConsumer(WebsocketConsumer):
             return
 
         total_cost = Decimal(self.stake) * len(card_ids)
-        if user.wallet < total_cost:
+        available_balance=user.wallet + user.bonus
+
+        if available_balance< total_cost:
             async_to_sync(self.channel_layer.send)(
                 self.channel_name,
                 {
@@ -492,7 +552,7 @@ class GameConsumer(WebsocketConsumer):
                 "game_id": current_game_id
             }))
             return
-        
+
         self.broadcast_active_games()
 
         # ✅ Start new game if no future schedule exists or time has passed
@@ -565,7 +625,6 @@ class GameConsumer(WebsocketConsumer):
             daemon=True
         ).start()
 
-
     # # --- Automatic Game Loop ---
     # def auto_game_start_loop(self):
     #     while True:
@@ -589,16 +648,16 @@ class GameConsumer(WebsocketConsumer):
     #             )
 
     #             time.sleep(30)  # Wait before checking again
-                
+
     #             print("Starting a new game with selected players:", selected_players)
     #             # Build the playerCard map: {user_id: [card_ids]}
     #             player_card_map = {
     #                 str(p['user']): p['card'] for p in selected_players
     #             }
-                
+
     #             # Calculate number of cards
     #             number_of_cards = sum(len(c) for c in player_card_map.values())
-                
+
     #             # Create game in DB
     #             new_game = Game.objects.create(
     #                 stake=self.stake,
@@ -612,8 +671,8 @@ class GameConsumer(WebsocketConsumer):
     #                 played='Started'
     #             )
     #             new_game.save()
-    #             print(f"New game created with ID: {new_game.id} and stake: {self.stake}")   
-                
+    #             print(f"New game created with ID: {new_game.id} and stake: {self.stake}")
+
     #             # Add game_id to Redis active games
     #             active_games.append(new_game.id)
     #             self.set_active_games(active_games)
@@ -640,7 +699,7 @@ class GameConsumer(WebsocketConsumer):
     #             self.set_selected_players([])
     #             self.set_player_count(0)
     #             self.broadcast_player_list()
-            
+
     def get_remaining_time(self):
         next_start_ts = self.get_stake_state("next_game_start")
         if not next_start_ts:
@@ -653,17 +712,17 @@ class GameConsumer(WebsocketConsumer):
         import random
         # Generate a list of numbers from 1 to 75
         numbers = list(range(1, 76))
-        
+
         # Shuffle the list to randomize the order
         random.shuffle(numbers)
-        
+
         return numbers
-    
+
     def start_game_with_random_numbers(self, game, selected_players):
         from custom_auth.models import User
         from decimal import Decimal
         import json
-        from game.models import Game
+        from game.models import Game, UserGameParticipation  # ✅ Import new model
 
         self.game_id = game.id
         self.set_game_state("is_running", True, game.id)
@@ -696,19 +755,48 @@ class GameConsumer(WebsocketConsumer):
                 total_deduction = stake_amount * len(flat_cards)
                 user = User.objects.get(id=user_id)
 
-                if user.wallet >= total_deduction:
-                    user.wallet -= total_deduction
-                    try:
-                        user.no_of_games_played = (user.no_of_games_played or 0) + 1
-                    except AttributeError:
-                        print(f"User {user_id} does not have 'no_of_games_played' field, skipping increment.")
-                    user.save()
-                    entry["card"] = flat_cards
-                    updated_player_cards.append(entry)
-                else:
+                # ✅ STEP 1: Check combined balance (wallet + bonus)
+                available_balance = user.wallet + user.bonus
+                if available_balance < total_deduction:
                     self.remove_player(user_id)
+                    continue
+
+                # ✅ STEP 2: Deduct from wallet first
+                remaining = total_deduction
+                if user.wallet >= remaining:
+                    user.wallet -= remaining
+                    remaining = Decimal('0')
+                else:
+                    remaining -= user.wallet
+                    user.wallet = Decimal('0')
+
+                # ✅ STEP 3: Deduct remaining from bonus
+                if remaining > 0:
+                    user.bonus -= remaining
+
+                # ✅ STEP 4: Record user-game participation
+                participation, created = UserGameParticipation.objects.get_or_create(
+                    user=user,
+                    game=game,
+                    defaults={'times_played': 1}
+                )
+                if not created:
+                    participation.times_played += 1
+                    participation.save(update_fields=['times_played'])
+
+                # ✅ STEP 5: Update user's total games played
+                try:
+                    user.no_of_games_played = (user.no_of_games_played or 0) + 1
+                except AttributeError:
+                    print(f"User {user_id} does not have 'no_of_games_played' field, skipping increment.")
+
+                user.save()
+                entry["card"] = flat_cards
+                updated_player_cards.append(entry)
+
             except Exception as e:
-                print(f"[Deduction Error] {e}")
+                print(f"[Deduction or Participation Error] {e}")
+                self.remove_player(user_id)
 
         game.numberofplayers = sum(len(p['card']) for p in updated_player_cards)
         game.playerCard = updated_player_cards
@@ -725,7 +813,7 @@ class GameConsumer(WebsocketConsumer):
             game.admin_cut = admin_cut
         else:
             game.admin_cut = Decimal('0')
-        
+
         game.winner_price = winner_price
         game.save()
 
@@ -777,15 +865,16 @@ class GameConsumer(WebsocketConsumer):
         self.set_selected_players([])
         self.set_player_count(0)
         self.broadcast_player_list()
+        self.regenerate_all_cards()
         self.try_start_game()
 
     def checkBingo(self, user_id, calledNumbers, game_id):
         from game.models import Card, Game
         from custom_auth.models import User
-        
+
         game = Game.objects.get(id=int(game_id))
         result = []
-        
+
         # Retrieve player's cards based on the provided user_id
         print(game.playerCard)
         selected_players = game.playerCard
@@ -801,7 +890,7 @@ class GameConsumer(WebsocketConsumer):
                 'game_id': game.id,
             }))
             return
-        
+
         # Flatten it safely
         def flatten(lst):
             for item in lst:
@@ -813,23 +902,23 @@ class GameConsumer(WebsocketConsumer):
         user_cards = list(flatten(player_cards))
 
         print(f"Checking Bingo for user {user_id} with cards: {user_cards}")
-        
+
         if game.winner != 0:
             return
-        
+
         if game.played == 'closed':
-            return 
-        
-        # Include a zero at the end of the called numbers (for "free space" if applicable)
+            return
+
+            # Include a zero at the end of the called numbers (for "free space" if applicable)
         # if not set(calledNumbers).issubset(self.get_game_state("called_numbers",game.id) or []):
         #     print("Called numbers do not match the game's called numbers.")
         #     return
-        
+
         called_numbers_list = calledNumbers + [0]
         game.total_calls = len(called_numbers_list)
-        game.save_called_numbers(called_numbers_list) 
+        game.save_called_numbers(called_numbers_list)
         game.save()
-        
+
         def flatten_card_ids(card_list):
             """Recursively flatten card IDs to handle any nested lists."""
             flattened = []
@@ -851,11 +940,11 @@ class GameConsumer(WebsocketConsumer):
             print(f"Checking card {card.id} for user {user_id} with numbers: {numbers}")
             # Check if this card has a Bingo with the called numbers
             winning_numbers = self.has_bingo(numbers, called_numbers_list)
-            
+
             if winning_numbers:
-                
+
                 acc = User.objects.get(id=user_id)
-                
+
                 # Bingo achieved
                 result.append({
                     'card_name': card.id,
@@ -866,12 +955,12 @@ class GameConsumer(WebsocketConsumer):
                     'winning_numbers': winning_numbers,
                     'called_numbers': called_numbers_list
                 })
-                
+
                 # Close the game
                 game.played = "closed"
                 game.winner = user_id
                 game.save()
-                
+
                 # Notify all players in the room group about the result
                 async_to_sync(self.channel_layer.group_send)(
                     self.room_group_name,
@@ -881,11 +970,11 @@ class GameConsumer(WebsocketConsumer):
                         'game_id': game.id
                     }
                 )
-                bingo = self.get_game_state("bingo",game.id)
+                bingo = self.get_game_state("bingo", game.id)
                 if bingo == False:
                     acc.wallet += game.winner_price
                     acc.save()
-                    self.set_game_state("bingo",True,game.id)
+                    self.set_game_state("bingo", True, game.id)
                 return  # Exit once Bingo is found for any card
 
         # If no Bingo was found for any card
@@ -940,27 +1029,26 @@ class GameConsumer(WebsocketConsumer):
 
         if corner_count == 4:
             winning_numbers.extend([1, 5, 21, 25])
-        
+
         inner_corner_count = 0
         # Check the top-left corner (1, 1)
         if card[1][1] in called_numbers:
             inner_corner_count += 1
-    
+
         # Check the top-right corner (1, 5)
         if card[1][3] in called_numbers:
             inner_corner_count += 1
-    
+
         # Check the bottom-left corner (5, 1)
         if card[3][1] in called_numbers:
             inner_corner_count += 1
-    
+
         # Check the bottom-right corner (5, 5)
         if card[3][3] in called_numbers:
             inner_corner_count += 1
-    
+
         if inner_corner_count == 4:
             winning_numbers.extend([7, 9, 17, 19])
-    
 
         return winning_numbers
 
@@ -1002,7 +1090,6 @@ class GameConsumer(WebsocketConsumer):
             'stake': event['stake']
         }))
 
-
     def error(self, event):
         self.send(text_data=json.dumps({
             'type': 'error',
@@ -1021,14 +1108,14 @@ class GameConsumer(WebsocketConsumer):
             'type': 'timer_message',
             'remaining_seconds': event['remaining_seconds'],
         }))
-    
+
     def playing(self, event):
         self.send(text_data=json.dumps({
             'type': 'playing',
             'game_id': event['game_id'],
             'message': event['message']
         }))
-    
+
     def game_stats(self, event):
         self.send(text_data=json.dumps({
             'type': 'game_stats',
@@ -1038,22 +1125,22 @@ class GameConsumer(WebsocketConsumer):
             'bonus': event['bonus'],
             'game_id': event['game_id']
         }))
-    
+
     def result(self, event):
         self.send(text_data=json.dumps({
             'type': 'result',
             'data': event['data'],
             'game_id': event['game_id']
         }))
-    
+
     def no_cards(self, event):
         self.send(text_data=json.dumps({
             'type': 'no_cards',
             'message': event['message']
         }))
-    
-    def active_game_data(self,event):
+
+    def active_game_data(self, event):
         self.send(text_data=json.dumps({
-            'type':'active_game_data',
-            'data':event['data']
+            'type': 'active_game_data',
+            'data': event['data']
         }))
