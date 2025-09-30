@@ -19,42 +19,59 @@ class GameConsumer(WebsocketConsumer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def regenerate_card_numbers(self,card):
-        new_card=[]
-        used_numbers=set()
-
+    def regenerate_card_numbers(self, card, existing_cards):
+        new_card = []
+        used_numbers = set()
+    
         for i in range(5):
-            row=[]
+            row = []
             for j in range(5):
-                if 1==2 and j==2:
+                # Skip free center spot if you want (j==2 and i==2)
+                if False and i == 2 and j == 2:
                     row.append(0)
                 else:
-                    lower_bound=j*15+1
-                    upper_bound=(j+1)*15
-                    num=random.randint(lower_bound,upper_bound)
+                    lower_bound = j * 15 + 1
+                    upper_bound = (j + 1) * 15
+                    num = random.randint(lower_bound, upper_bound)
                     while num in used_numbers:
-                        num=random.randint(lower_bound,upper_bound)
+                        num = random.randint(lower_bound, upper_bound)
                     used_numbers.add(num)
                     row.append(num)
             new_card.append(row)
-        card.numbers=json.dumps(new_card)
+    
+        # Convert to a tuple of tuples for hashability (so we can check uniqueness)
+        card_key = tuple(tuple(r) for r in new_card)
+    
+        # Ensure uniqueness across all cards
+        while card_key in existing_cards:
+            # If duplicate found, regenerate again
+            return self.regenerate_card_numbers(card, existing_cards)
+    
+        # Save new card
+        card.numbers = json.dumps(new_card)
         card.save(update_fields=['numbers'])
+    
+        # Mark as used
+        existing_cards.add(card_key)
+    
         return new_card
-
-
+    
+    
     def regenerate_all_cards(self):
         from game.models import Card
-        cards=Card.objects.all()
-        total=cards.count()
+    
+        cards = Card.objects.all()
+        total = cards.count()
         print(f"[Regen] 🔄 Starting regeneration of {total} cards... ")
-
-        for i, card in enumerate(cards,1):
-            self.regenerate_card_numbers(card)
-            if i % 100==0:
+    
+        existing_cards = set()
+    
+        for i, card in enumerate(cards, 1):
+            self.regenerate_card_numbers(card, existing_cards)
+            if i % 100 == 0:
                 print(f"[Regen] {i}/{total} cards regenerated...")
+    
         print(f"[Regen] ✅ All {total} cards regenerated successfully.")
-
-
 
 
     def connect(self):
