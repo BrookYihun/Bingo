@@ -27,7 +27,7 @@ class GameConsumer(WebsocketConsumer):
             row = []
             for j in range(5):
                 # Skip free center spot if you want (j==2 and i==2)
-                if False and i == 2 and j == 2:
+                if i == 2 and j == 2:
                     row.append(0)
                 else:
                     lower_bound = j * 15 + 1
