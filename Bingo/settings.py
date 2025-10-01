@@ -124,7 +124,7 @@ DATABASES={
         'NAME': 'dallol_bingo_online',
         'USER': 'dallol',
         'PASSWORD': 'Byihun@123',
-        'HOST': '5.75.175.113',  # Typically localhost for shared hosting
+        'HOST': 'localhost',  # Typically localhost for shared hosting
         'PORT': '5432',
     }
 }
