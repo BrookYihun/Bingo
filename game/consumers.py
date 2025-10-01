@@ -58,20 +58,34 @@ class GameConsumer(WebsocketConsumer):
     
     
     def regenerate_all_cards(self):
-        from game.models import Card
+        from game.models import Card, Game
     
-        cards = Card.objects.all()
-        total = cards.count()
-        print(f"[Regen] 🔄 Starting regeneration of {total} cards... ")
+        # Get all active games that are running
+        active_games = Game.objects.filter(played='Playing')
+        active_cards = set()
+    
+        for game in active_games:
+            # Flatten player cards for this game
+            for player in game.playerCard:
+                for card_id in player['card']:
+                    if isinstance(card_id, list):
+                        active_cards.update(card_id)
+                    else:
+                        active_cards.add(card_id)
+    
+        # Only regenerate cards NOT in active games
+        cards_to_regen = Card.objects.exclude(id__in=active_cards)
+        total = cards_to_regen.count()
+        print(f"[Regen] 🔄 Regenerating {total} cards (excluding active game cards)...")
     
         existing_cards = set()
-    
-        for i, card in enumerate(cards, 1):
+        for i, card in enumerate(cards_to_regen, 1):
             self.regenerate_card_numbers(card, existing_cards)
             if i % 100 == 0:
                 print(f"[Regen] {i}/{total} cards regenerated...")
     
-        print(f"[Regen] ✅ All {total} cards regenerated successfully.")
+        print(f"[Regen] ✅ All {total} non-active cards regenerated successfully.")
+    
 
 
     def connect(self):
