@@ -56,6 +56,7 @@ class User(AbstractUser):
     no_of_games_played = models.IntegerField(default=0)
     reserved_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     total_withdraw_amount_per_day = models.DecimalField(max_digits=38, decimal_places=2, default=0)
+    reference = models.CharField(max_length=255, default="", blank=True)
 
     def __str__(self):
         return self.name  # Or self.get_full_name() if you want full name
