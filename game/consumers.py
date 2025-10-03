@@ -896,7 +896,7 @@ class GameConsumer(WebsocketConsumer):
         self.set_selected_players([])
         self.set_player_count(0)
         self.broadcast_player_list()
-        self.regenerate_all_cards()
+        # self.regenerate_all_cards()
         self.try_start_game()
 
     def checkBingo(self, user_id, calledNumbers, game_id):
