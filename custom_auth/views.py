@@ -90,13 +90,13 @@ class RegisterView(APIView):
 def generate_random_password(length=8):
     return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
 
-
 @permission_classes([AllowAny])
 class RegisterTelegramView(APIView):
     def post(self, request):
         phone_number = request.data.get('phone_number')
         chat_id = request.data.get('chat_id')
         name = request.data.get('name')
+        reference = request.data.get('reference', "")  # <-- default "" if not provided
 
         if not phone_number or not chat_id or not name:
             return Response(
@@ -106,8 +106,10 @@ class RegisterTelegramView(APIView):
 
         try:
             user = User.objects.get(phone_number=phone_number)
-            # Phone number exists – update chat_id
+            # Phone number exists – update chat_id and reference if provided
             user.telegram_id = chat_id
+            if reference:  # only overwrite if passed
+                user.reference = reference
             user.save()
         except User.DoesNotExist:
             # Phone number doesn't exist – create new user with random password
@@ -117,6 +119,7 @@ class RegisterTelegramView(APIView):
                 name=name,
                 password=random_password,
                 telegram_id=chat_id,
+                reference=reference,  # <-- always set, will be "" if not passed
                 wallet=0.0,  # Initialize wallet to 0.0
                 bonus=19.0,
             )
@@ -137,6 +140,7 @@ class RegisterTelegramView(APIView):
             },
             "user": user_data,
         }, status=status.HTTP_200_OK)
+
 
 class LoginView(APIView):
     permission_classes = [AllowAny]  # Allow unauthenticated users to access this view
