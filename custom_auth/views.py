@@ -108,8 +108,6 @@ class RegisterTelegramView(APIView):
             user = User.objects.get(phone_number=phone_number)
             # Phone number exists – update chat_id and reference if provided
             user.telegram_id = chat_id
-            if reference:  # only overwrite if passed
-                user.reference = reference
             user.save()
         except User.DoesNotExist:
             # Phone number doesn't exist – create new user with random password
