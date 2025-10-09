@@ -8,7 +8,7 @@ import requests
 from django.core.cache import cache
 from django.db import models
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
