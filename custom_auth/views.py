@@ -119,7 +119,7 @@ class RegisterTelegramView(APIView):
                 telegram_id=chat_id,
                 reference=reference,  # <-- always set, will be "" if not passed
                 wallet=0.0,  # Initialize wallet to 0.0
-                bonus=19.0,
+                bonus=0.0,
             )
 
         user.verify_otp()
