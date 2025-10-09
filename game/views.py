@@ -329,50 +329,42 @@ def get_game_participants(request, game_id):
         "total_participants": len(results)
     })
 
-
-
-
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_global_leaderboard(request):
-
-    thirty_days_ago = timezone.now() - timedelta(days=30)
+    now = timezone.now()
+    # First day of the current month
+    start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
     stake_param = request.GET.get('stake', '10')
-
-    if stake_param not in ['10', '100','20','50']:
-        return Response(
-            {"error": "Invalid stake. "},
-            status=400
-        )
+    if stake_param not in ['10', '20', '50', '100']:
+        return Response({"error": "Invalid stake."}, status=400)
     selected_stake = stake_param
 
     current_user = request.user
 
+    # Count unique games participated in this month, filtered by stake
     annotated_users = (
         User.objects
         .annotate(
-            total_games=models.Sum(
-                'game_participation__times_played',
-                filter=(
-                    models.Q(game_participation__created_at__gte=thirty_days_ago) &
-                    models.Q(game_participation__game__stake=selected_stake)
-                )
+            total_games=Count(
+                'game_participation__game',
+                filter=Q(game_participation__created_at__gte=start_of_month) &
+                       Q(game_participation__game__stake=selected_stake),
+                distinct=True  # count unique games only
             )
         )
-        .filter(total_games__isnull=False)
+        .filter(total_games__gt=0)
         .order_by('-total_games', 'id')
     )
 
     all_users_with_rank = list(annotated_users.values('id', 'total_games'))
 
-    user_rank_map = {}
-    for index, item in enumerate(all_users_with_rank, start=1):
-        user_rank_map[item['id']] = {
-            'rank': index,
-            'total_games_played': item['total_games']
-        }
+    # Map user ID to rank and total games
+    user_rank_map = {item['id']: {'rank': index + 1, 'total_games_played': item['total_games']}
+                     for index, item in enumerate(all_users_with_rank)}
 
+    # Current user's rank
     your_data = user_rank_map.get(current_user.id)
     if your_data:
         your_rank_info = {
@@ -383,18 +375,17 @@ def get_global_leaderboard(request):
             "total_games_played": your_data['total_games_played']
         }
     else:
-        # User has no participation in this category
         your_rank_info = {
             "rank": None,
             "user_id": current_user.id,
-            "name": current_user.first_name,
+            "name": current_user.name,
             "phone_number": current_user.phone_number,
             "total_games_played": 0
         }
 
-    top_10 = annotated_users[:10]
+    # Top 10 leaderboard
     leaderboard = []
-    for user in top_10:
+    for user in annotated_users[:10]:
         leaderboard.append({
             "rank": user_rank_map[user.id]['rank'],
             "user_id": user.id,
@@ -407,12 +398,13 @@ def get_global_leaderboard(request):
         "leaderboard": leaderboard,
         "your_rank": your_rank_info,
         "total_users_ranked": len(user_rank_map),
-        "period": "last_30_days",
-        "from_date": thirty_days_ago.date().isoformat(),
-        "to_date": timezone.now().date().isoformat(),
+        "period": "current_month",
+        "from_date": start_of_month.date().isoformat(),
+        "to_date": now.date().isoformat(),
         "filtered_by": {"stake": selected_stake},
-        "available_filters": {"stake": ["10", "100","20","50"]}
+        "available_filters": {"stake": ["10", "20", "50", "100"]}
     })
+
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
