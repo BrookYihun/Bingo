@@ -114,7 +114,7 @@ class GameConsumer(WebsocketConsumer):
                 current_game = Game.objects.get(id=current_game_id)
                 # Bonus text logic
                 stake_value = int(self.stake or 0)
-                if stake_value in [10, 20, 50]:
+                if stake_value in [10, 20, 50] and current_game.numberofplayers >= 10:
                     bonus_text = "10X"
                 else:
                     bonus_text = ""
@@ -253,7 +253,7 @@ class GameConsumer(WebsocketConsumer):
                 current_game = Game.objects.get(id=current_game_id)
                 # Bonus text logic
                 stake_value = int(self.stake or 0)
-                if stake_value in [10, 20, 50]:
+                if stake_value in [10, 20, 50] and current_game.numberofplayers >= 10:
                     bonus_text = "10X"
                 else:
                     bonus_text = ""
@@ -875,7 +875,7 @@ class GameConsumer(WebsocketConsumer):
         game.save()
 
         stake_value = int(self.stake or 0)
-        if stake_value in [10, 20, 50]:
+        if stake_value in [10, 20, 50] and game.numberofplayers >= 10:
             bonus_text = "10X"
         else:
             bonus_text = ""
@@ -1013,27 +1013,29 @@ class GameConsumer(WebsocketConsumer):
                 bones_amount = 0
 
                 if stake == 10 or stake == 20 or stake == 50:
-                    
-                    # Determine number of bones
-                    bones = len(called_numbers_list) 
 
-                    # Determine multiplier based on bones
-                    if bones <= 5:
-                        multiplier = 10
-                    elif bones == 6:
-                        multiplier = 8
-                    elif bones == 7:
-                        multiplier = 6
-                    elif bones == 8:
-                        multiplier = 4
-                    elif bones == 9:
-                        multiplier = 3
-                    elif bones == 10:
-                        multiplier = 2
-                    elif bones == 11:
-                        multiplier = 1
-                    else:
-                        multiplier = 0
+                    if game.numberofplayers >= 10:
+                    
+                        # Determine number of bones
+                        bones = len(called_numbers_list) 
+
+                        # Determine multiplier based on bones
+                        if bones <= 5:
+                            multiplier = 10
+                        elif bones == 6:
+                            multiplier = 8
+                        elif bones == 7:
+                            multiplier = 6
+                        elif bones == 8:
+                            multiplier = 4
+                        elif bones == 9:
+                            multiplier = 3
+                        elif bones == 10:
+                            multiplier = 2
+                        elif bones == 11:
+                            multiplier = 1
+                        else:
+                            multiplier = 0
                     
                     bones_amount = stake * multiplier
 
