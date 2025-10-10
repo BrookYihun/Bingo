@@ -112,12 +112,18 @@ class GameConsumer(WebsocketConsumer):
             if is_running:
                 from game.models import Game
                 current_game = Game.objects.get(id=current_game_id)
+                # Bonus text logic
+                if self.stake in [10, 20, 50]:
+                    bonus_text = "10X"
+                else:
+                    bonus_text = ""
+
                 stats = {
                     "type": "game_stat",
                     'number_of_players': current_game.numberofplayers,
                     'stake': current_game.stake,
                     'winner_price': float(current_game.winner_price),
-                    'bonus': current_game.bonus,
+                    'bonus': bonus_text,
                     'game_id': current_game.id,
                     "running": True,
                     "called_numbers": self.get_game_state("called_numbers", current_game_id) or [],
@@ -244,12 +250,18 @@ class GameConsumer(WebsocketConsumer):
             if is_running:
                 from game.models import Game
                 current_game = Game.objects.get(id=current_game_id)
+                # Bonus text logic
+                if self.stake in [10, 20, 50]:
+                    bonus_text = "10X"
+                else:
+                    bonus_text = ""
+
                 stats = {
                     "type": "game_stat",
                     'number_of_players': current_game.numberofplayers,
                     'stake': current_game.stake,
                     'winner_price': float(current_game.winner_price),
-                    'bonus': current_game.bonus,
+                    'bonus': bonus_text,
                     'game_id': current_game.id,
                     "running": True,
                     "called_numbers": self.get_game_state("called_numbers", current_game_id) or [],
@@ -336,9 +348,12 @@ class GameConsumer(WebsocketConsumer):
     def get_all_active_games(self):
         from .models import Game
         from django.utils import timezone
+        import json
+
         try:
             active_games = {}
             stakes = [10, 20, 30, 40, 50, 100, 150, 200]
+            bonus_stakes = {10, 20, 50}  # ✅ Stakes that have bonus
 
             current_time = timezone.now()
             current_timestamp = current_time.timestamp()
@@ -355,7 +370,14 @@ class GameConsumer(WebsocketConsumer):
                 next_game_start = self.redis_client.get(next_start_key)
                 next_game_start = json.loads(next_game_start) if next_game_start else None
 
-                is_running = self.get_game_state("is_running", current_game_id) if current_game_id else False
+                is_running = (
+                    self.get_game_state("is_running", current_game_id)
+                    if current_game_id
+                    else False
+                )
+
+                # Default bonus flag
+                has_bonus = stake in bonus_stakes
 
                 if is_running and current_game_id:
                     try:
@@ -365,7 +387,7 @@ class GameConsumer(WebsocketConsumer):
                             "is_running": False,
                             "remaining_seconds": 0,
                             "winner_price": 0,
-                            "bonus": False,
+                            "bonus": has_bonus,
                         }
                         continue
 
@@ -374,14 +396,14 @@ class GameConsumer(WebsocketConsumer):
                             "is_running": False,
                             "remaining_seconds": 0,
                             "winner_price": 0,
-                            "bonus": False,
+                            "bonus": has_bonus,
                         }
                     else:
                         active_games[stake_str] = {
                             "is_running": True,
                             "remaining_seconds": 0,
                             "winner_price": float(current_game.winner_price),
-                            "bonus": False,
+                            "bonus": has_bonus,
                         }
 
                 elif next_game_start and next_game_start > current_timestamp:
@@ -393,19 +415,21 @@ class GameConsumer(WebsocketConsumer):
                         "is_running": False,
                         "remaining_seconds": remaining,
                         "winner_price": winner,
-                        "bonus": False,
+                        "bonus": has_bonus,
                     }
                 else:
                     active_games[stake_str] = {
                         "is_running": False,
                         "remaining_seconds": 0,
                         "winner_price": 0,
-                        "bonus": False,
+                        "bonus": has_bonus,
                     }
+
         except Exception as e:
-            print(f"Error fetching active games for stake {stake}: {e}")
+            print(f"Error fetching active games: {e}")
 
         return active_games
+
 
     def safe_float(self, val):
         try:
@@ -848,6 +872,12 @@ class GameConsumer(WebsocketConsumer):
         game.winner_price = winner_price
         game.save()
 
+        # Bonus text logic
+        if self.stake in [10, 20, 50]:
+            bonus_text = "10X"
+        else:
+            bonus_text = ""
+
         async_to_sync(self.channel_layer.group_send)(
             self.room_group_name,
             {
@@ -855,7 +885,7 @@ class GameConsumer(WebsocketConsumer):
                 'number_of_players': game.numberofplayers,
                 'stake': game.stake,
                 'winner_price': float(game.winner_price),
-                'bonus': game.bonus,
+                'bonus': bonus_text,
                 'game_id': game.id,
                 "is_running": True,
             }
@@ -976,6 +1006,35 @@ class GameConsumer(WebsocketConsumer):
 
                 acc = User.objects.get(id=user_id)
 
+                # Get stake amount (assuming game.stake or similar field exists)
+                stake = game.stake
+                bones_amount = 0
+
+                if stake == 10 or stake == 20 or stake == 50:
+                    
+                    # Determine number of bones
+                    bones = len(called_numbers_list) 
+
+                    # Determine multiplier based on bones
+                    if bones <= 5:
+                        multiplier = 10
+                    elif bones == 6:
+                        multiplier = 8
+                    elif bones == 7:
+                        multiplier = 6
+                    elif bones == 8:
+                        multiplier = 4
+                    elif bones == 9:
+                        multiplier = 3
+                    elif bones == 10:
+                        multiplier = 2
+                    elif bones == 11:
+                        multiplier = 1
+                    else:
+                        multiplier = 0
+                    
+                    bones_amount = stake * multiplier
+
                 # Bingo achieved
                 result.append({
                     'card_name': card.id,
@@ -984,12 +1043,14 @@ class GameConsumer(WebsocketConsumer):
                     'user_id': acc.id,
                     'card': json.loads(card.numbers),
                     'winning_numbers': winning_numbers,
-                    'called_numbers': called_numbers_list
+                    'called_numbers': called_numbers_list,
+                    'bones_won': bones_amount,
                 })
 
                 # Close the game
                 game.played = "closed"
                 game.winner = user_id
+                game.bonus = bones_amount
                 game.save()
 
                 # Notify all players in the room group about the result
@@ -1003,7 +1064,7 @@ class GameConsumer(WebsocketConsumer):
                 )
                 bingo = self.get_game_state("bingo", game.id)
                 if bingo == False:
-                    acc.wallet += game.winner_price
+                    acc.wallet += game.winner_price + bones_amount
                     acc.save()
                     self.set_game_state("bingo", True, game.id)
                 return  # Exit once Bingo is found for any card
@@ -1105,7 +1166,7 @@ class GameConsumer(WebsocketConsumer):
             'number_of_players': event['number_of_players'],
             'stake': event['stake'],
             'winner_price': event.get('winner_price', 0),
-            'bonus': event.get('bonus', 0),
+            'bonus': event.get('bonus', ""),
             'game_id': event.get('game_id', None),
             'is_running': event.get('is_running', False),
             'remaining_seconds': event.get('remaining_seconds', 0),
