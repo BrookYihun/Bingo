@@ -113,7 +113,8 @@ class GameConsumer(WebsocketConsumer):
                 from game.models import Game
                 current_game = Game.objects.get(id=current_game_id)
                 # Bonus text logic
-                if self.stake in [10, 20, 50]:
+                stake_value = int(self.stake or 0)
+                if stake_value in [10, 20, 50]:
                     bonus_text = "10X"
                 else:
                     bonus_text = ""
@@ -251,7 +252,8 @@ class GameConsumer(WebsocketConsumer):
                 from game.models import Game
                 current_game = Game.objects.get(id=current_game_id)
                 # Bonus text logic
-                if self.stake in [10, 20, 50]:
+                stake_value = int(self.stake or 0)
+                if stake_value in [10, 20, 50]:
                     bonus_text = "10X"
                 else:
                     bonus_text = ""
@@ -872,8 +874,8 @@ class GameConsumer(WebsocketConsumer):
         game.winner_price = winner_price
         game.save()
 
-        # Bonus text logic
-        if self.stake in [10, 20, 50]:
+        stake_value = int(self.stake or 0)
+        if stake_value in [10, 20, 50]:
             bonus_text = "10X"
         else:
             bonus_text = ""
