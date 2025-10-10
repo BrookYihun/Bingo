@@ -334,7 +334,7 @@ def get_game_participants(request, game_id):
 def get_global_leaderboard(request):
     now = timezone.now()
     # First day of the current month
-    start_of_month = now.replace(day=7, hour=0, minute=0, second=0, microsecond=0)
+    start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
     stake_param = request.GET.get('stake', '10')
     if stake_param not in ['10', '20', '50', '100']:
