@@ -766,13 +766,12 @@ class GameConsumer(WebsocketConsumer):
         return remaining
 
     def generate_random_numbers(self):
-        import random
-        # Generate a list of numbers from 1 to 75
+        import secrets
         numbers = list(range(1, 76))
-
-        # Shuffle the list to randomize the order
-        random.shuffle(numbers)
-
+        # Fisher-Yates shuffle using cryptographic randomness
+        for i in range(len(numbers) - 1, 0, -1):
+            j = secrets.randbelow(i + 1)
+            numbers[i], numbers[j] = numbers[j], numbers[i]
         return numbers
 
     def start_game_with_random_numbers(self, game, selected_players):
