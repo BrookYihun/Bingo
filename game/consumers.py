@@ -1149,7 +1149,10 @@ class GameConsumer(WebsocketConsumer):
 
     def block(self, user_id):
         from game.models import Game
-        last_game = Game.objects.get(id=self.game_id)
+        current_game_id = self.get_stake_state("current_game_id")
+        if not current_game_id:
+            return
+        last_game = Game.objects.get(id=current_game_id)
         players = json.loads(last_game.playerCard)
         updated_list = [item for item in players if int(item['user']) != user_id]
         last_game.playerCard = json.dumps(updated_list)
