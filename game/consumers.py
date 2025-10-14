@@ -1053,7 +1053,7 @@ class GameConsumer(WebsocketConsumer):
                 # Close the game
                 game.played = "closed"
                 game.winner = user_id
-                game.winner_cards=user_id
+                game.winner_card=card.id
                 game.bonus = bones_amount
                 game.save()
 
