@@ -25,6 +25,7 @@ class Game(models.Model):
     admin_cut = models.DecimalField(max_digits=100,default=0,decimal_places=2)
     bonus = models.IntegerField(default=0)
     winner = models.IntegerField(default=0)
+    winner_cards=models.JSONField(default=list)
 
     def __str__(self) -> str:
         return f"Game number {self.id}"
