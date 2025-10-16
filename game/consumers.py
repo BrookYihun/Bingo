@@ -930,6 +930,34 @@ class GameConsumer(WebsocketConsumer):
         # self.regenerate_all_cards()
         self.try_start_game()
 
+     # NEW HELPER: Update consecutive losses after game ends with a winner
+    def update_consecutive_losses_after_game(self, game_id, winner_user_id):
+            from custom_auth.models import User
+            from game.models import UserGameParticipation
+
+            # Get all user IDs who participated in this game
+            participant_user_ids = UserGameParticipation.objects.filter(game_id=game_id).values_list('user_id',
+                                                                                                     flat=True)
+            for user_id in participant_user_ids:
+                try:
+                    user = User.objects.get(id=user_id)
+                    if user_id == winner_user_id:
+                        # Winner: reset loss streak
+                        user.consecutive_losses = 0
+                        user.save(update_fields=['consecutive_losses'])
+                    else:
+                        user.consecutive_losses += 1
+                        if user.consecutive_losses >= 10:
+                            user.bonus += 10
+                            user.consecutive_losses = 0
+                            user.save(update_fields=['bonus', 'consecutive_losses'])
+                        else:
+                            user.save(update_fields=['consecutive_losses'])
+                    print(
+                        f"[LOSS TRACK] User {user_id}: consecutive_losses = {user.consecutive_losses}, bonus = {user.bonus}")
+                except User.DoesNotExist:
+                    continue
+
     def checkBingo(self, user_id, calledNumbers, game_id):
         from game.models import Card, Game
         from custom_auth.models import User
@@ -1037,7 +1065,7 @@ class GameConsumer(WebsocketConsumer):
                             multiplier = 0
                     
                     bones_amount = stake * multiplier
-
+                self.update_consecutive_losses_after_game(game_id, user_id)
                 # Bingo achieved
                 result.append({
                     'card_name': card.id,
