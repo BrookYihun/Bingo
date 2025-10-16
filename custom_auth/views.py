@@ -57,6 +57,7 @@ class RegisterView(APIView):
         password = request.data.get('password')
         name = request.data.get('name')
 
+
         # Validate the input
         if not phone_number or not password or not name:
             return Response(
@@ -120,6 +121,7 @@ class RegisterTelegramView(APIView):
                 reference=reference,  # <-- always set, will be "" if not passed
                 wallet=0.0,  # Initialize wallet to 0.0
                 bonus=0.0,
+                consecutive_losses=0,
             )
 
         user.verify_otp()
