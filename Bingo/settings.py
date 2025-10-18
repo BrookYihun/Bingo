@@ -118,26 +118,26 @@ WSGI_APPLICATION = 'Bingo.wsgi.application'
 #         'PORT': '5433',  # Leave empty if default port 5432 is used           # Leave empty if default port 5432 is used
 #     }
 # }
-# DATABASES={
-#     'default':{
-#         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': 'dallol_bingo_online',
-#         'USER': 'dallol',
-#         'PASSWORD': 'Byihun@123',
-#         'HOST': '5.75.175.113',  # Typically localhost for shared hosting
-#         'PORT': '5432',  #
-#     }
-# }
 DATABASES={
     'default':{
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'agents_local',
-        'USER': 'postgres',
-        'PASSWORD': 'localdev123',
-        'HOST': 'localhost',  # Typically localhost for shared hosting
-        'PORT': '5433',
+        'NAME': 'dallol_bingo_online',
+        'USER': 'dallol',
+        'PASSWORD': 'Byihun@123',
+        'HOST': '5.75.175.113',  # Typically localhost for shared hosting
+        'PORT': '5432',  #
     }
 }
+# DATABASES={
+#     'default':{
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': 'agents_local',
+#         'USER': 'postgres',
+#         'PASSWORD': 'localdev123',
+#         'HOST': 'localhost',  # Typically localhost for shared hosting
+#         'PORT': '5433',
+#     }
+# }
 
 
 # Password validation
