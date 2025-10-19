@@ -941,6 +941,13 @@ class GameConsumer(WebsocketConsumer):
             for user_id in participant_user_ids:
                 try:
                     user = User.objects.get(id=user_id)
+            
+                    # Ensure defaults for safety
+                    if user.consecutive_losses is None:
+                        user.consecutive_losses = 0
+                    if user.bonus is None:
+                        user.bonus = 0
+            
                     if user_id == winner_user_id:
                         # Winner: reset loss streak
                         user.consecutive_losses = 0
@@ -953,6 +960,7 @@ class GameConsumer(WebsocketConsumer):
                             user.save(update_fields=['bonus', 'consecutive_losses'])
                         else:
                             user.save(update_fields=['consecutive_losses'])
+            
                     print(
                         f"[LOSS TRACK] User {user_id}: consecutive_losses = {user.consecutive_losses}, bonus = {user.bonus}")
                 except User.DoesNotExist:
