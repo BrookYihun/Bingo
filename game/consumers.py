@@ -1072,7 +1072,7 @@ class GameConsumer(WebsocketConsumer):
                         else:
                             multiplier = 0
                     
-                    bones_amount = stake * multiplier
+                        bones_amount = stake * multiplier
                 self.update_consecutive_losses_after_game(game_id, user_id)
                 # Bingo achieved
                 result.append({
