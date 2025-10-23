@@ -99,7 +99,6 @@ class GroupConsumer(WebsocketConsumer):
         )
 
         group = Group.objects.get(id=self.group)
-        self.stake = group.stake
         current_game_id = self.get_group_state("current_game_id")
         is_running = self.get_game_state("is_running", current_game_id) if current_game_id else False
         stats = {}
@@ -117,7 +116,7 @@ class GroupConsumer(WebsocketConsumer):
                 is_running = False
             else:
                 # Bonus text logic
-                stake_value = int(self.stake or 0)
+                stake_value = int(group.stake or 0)
                 if stake_value in [10, 20, 50] and current_game.numberofplayers >= 10:
                     bonus_text = "10X"
                 else:
@@ -146,7 +145,7 @@ class GroupConsumer(WebsocketConsumer):
                 "message": "No game is currently running.",
                 "number_of_players": self.get_player_count(),
                 "remaining_seconds": self.get_remaining_time(),
-                "stake": float(self.stake)
+                "stake": float(group.stake)
             }
 
         self.send(text_data=json.dumps(stats))
@@ -296,7 +295,7 @@ class GroupConsumer(WebsocketConsumer):
                     "message": "No game is currently running.",
                     "number_of_players": self.get_player_count(),
                     "remaining_seconds": self.get_remaining_time(),
-                    "stake": float(self.stake)
+                    "stake": float(group.stake)
                 }
 
             self.send(text_data=json.dumps(stats))
@@ -408,8 +407,10 @@ class GroupConsumer(WebsocketConsumer):
     def add_player(self, player_id, card_id):
         from custom_auth.models import User
         from decimal import Decimal
+        from group.models import Group
 
         selected_players = self.get_selected_players()
+        group = Group.objects.get(id=self.group)
 
         # Remove existing entry for this user (if re-adding)
         selected_players = [p for p in selected_players if p['user'] != player_id]
@@ -446,7 +447,7 @@ class GroupConsumer(WebsocketConsumer):
             )
             return
 
-        total_cost = Decimal(self.stake) * len(card_ids)
+        total_cost = Decimal(group.stake) * len(card_ids)
         available_balance=user.wallet + user.bonus
 
         if available_balance< total_cost:
@@ -488,6 +489,8 @@ class GroupConsumer(WebsocketConsumer):
         self.broadcast_player_list()
 
     def broadcast_player_list(self):
+        from group.models import Group
+        group = Group.objects.get(id=self.group)
         async_to_sync(self.channel_layer.group_send)(
             self.room_group_name,
             {
@@ -500,7 +503,7 @@ class GroupConsumer(WebsocketConsumer):
             {
                 'type': 'game_stat',
                 'number_of_players': self.get_player_count(),
-                'stake': float(self.stake),
+                'stake': float(group.stake),
                 'remaining_seconds': self.get_remaining_time()
             }
         )
@@ -592,6 +595,8 @@ class GroupConsumer(WebsocketConsumer):
     def _start_game_logic(self):
         from game.models import Game
         from django.utils import timezone
+        from group.models import Group
+        group = Group.objects.get(id=self.group)
 
         selected_players = self.get_selected_players()
         if not selected_players or len(selected_players) < 2:
@@ -607,7 +612,7 @@ class GroupConsumer(WebsocketConsumer):
 
         player_card_map = {str(p['user']): p['card'] for p in selected_players}
         new_game = Game.objects.create(
-            stake=self.stake,
+            stake=group.stake,
             numberofplayers=sum(len(c) for c in player_card_map.values()),
             playerCard=player_card_map,
             random_numbers=json.dumps(self.generate_random_numbers()),
@@ -630,7 +635,7 @@ class GroupConsumer(WebsocketConsumer):
                 'game_id': new_game.id,
                 'player_list': selected_players,
                 'group': self.group,
-                'stake': float(self.stake)
+                'stake': float(group.stake)
             }
         )
 
@@ -675,7 +680,7 @@ class GroupConsumer(WebsocketConsumer):
 
     #             # Create game in DB
     #             new_game = Game.objects.create(
-    #                 stake=self.stake,
+    #                 stake=group.stake,
     #                 numberofplayers=number_of_cards,
     #                 playerCard=player_card_map,
     #                 random_numbers=json.dumps(self.generate_random_numbers()),
@@ -686,7 +691,7 @@ class GroupConsumer(WebsocketConsumer):
     #                 played='Started'
     #             )
     #             new_game.save()
-    #             print(f"New game created with ID: {new_game.id} and stake: {self.stake}")
+    #             print(f"New game created with ID: {new_game.id} and stake: {group.stake}")
 
     #             # Add game_id to Redis active games
     #             active_games.append(new_game.id)
@@ -699,7 +704,7 @@ class GroupConsumer(WebsocketConsumer):
     #                     'type': 'game_started',
     #                     'game_id': new_game.id,
     #                     'player_list': selected_players,
-    #                     'stake': self.stake
+    #                     'stake': group.stake
     #                 }
     #             )
 
@@ -837,7 +842,7 @@ class GroupConsumer(WebsocketConsumer):
         game.save()
         group.save()
 
-        stake_value = int(self.stake or 0)
+        stake_value = int(group.stake or 0)
         if stake_value in [10, 20, 50] and game.numberofplayers >= 10:
             bonus_text = "10X"
         else:
@@ -848,7 +853,7 @@ class GroupConsumer(WebsocketConsumer):
             {
                 'type': 'game_stat',
                 'number_of_players': game.numberofplayers,
-                'stake': float(self.stake),
+                'stake': float(group.stake),
                 'winner_price': float(game.winner_price),
                 'number_of_patterns': group.number_of_patterns,
                 'bonus': bonus_text,
