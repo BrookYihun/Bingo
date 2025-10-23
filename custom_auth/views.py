@@ -387,6 +387,30 @@ def is_token_not_expired(token, expiration_minutes=30):
         # Handle decoding or parsing errors
         return False
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def update_profile_view(request):
+
+    try:
+        data = json.loads(request.body)
+        new_name = data.get("name", "").strip()
+
+        if not new_name:
+            return Response({"error": "Name cannot be empty"}, status=400)
+
+        if not request.user.is_authenticated:
+            return Response({"error": "Authentication required"}, status=401)
+
+        user = request.user
+        user.name = new_name
+        user.save()
+        return Response({"success": True, "name": user.name})
+    
+    except json.JSONDecodeError:
+        return Response({"error": "Invalid JSON"}, status=400)
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
+
 
 @api_view(["GET"])
 @permission_classes([AllowAny])

@@ -1,6 +1,6 @@
-from django.urls import path
-from . import consumers  # you'll create this next
+from django.urls import re_path
+from . import consumers
 
 websocket_urlpatterns = [
-    path(r'ws/group-socket/(?P<group_id>[^/]+)/$', consumers.GroupConsumer.as_asgi()),
+    re_path(r'ws/group-socket/(?P<group>[^/]+)/$', consumers.GroupConsumer.as_asgi()),
 ]

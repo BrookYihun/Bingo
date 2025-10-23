@@ -16,6 +16,6 @@ class GroupSerializer(serializers.ModelSerializer):
         model = Group
         fields = [
             'id', 'name', 'description', 'is_recurring', 'recurrence_interval_seconds',
-            'stake', 'is_public', 'is_scheduled', 'scheduled_datetime', 'group_link',
+            'stake', 'is_public', 'scheduled_datetime', 'referral_code', 'number_of_patterns',
             'owner', 'owner_name', 'subscribers', 'created_at'
         ]

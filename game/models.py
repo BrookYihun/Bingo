@@ -129,6 +129,7 @@ class DepositAccount(models.Model):
 
     def __str__(self):
         return f"{self.deposit_payment_method} - {self.account_number}"
+    
 class CustomAuthAbstractuser(AbstractBaseUser):  # ✅ Inherit from AbstractBaseUser
     id = models.BigAutoField(primary_key=True)
     password = models.CharField(max_length=128)
@@ -191,6 +192,7 @@ class CustomAuthUser(models.Model):
     class Meta:
         managed = False
         db_table = 'custom_auth_user'
+        
 class TransferLog(models.Model):
     from_user=models.ForeignKey(
         CustomAuthUser,

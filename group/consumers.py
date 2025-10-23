@@ -1,97 +1,159 @@
 import json
 import threading
+import time
+import random
+
+from django.template.defaultfilters import lower
 from django.utils import timezone
 from channels.generic.websocket import WebsocketConsumer
 from asgiref.sync import async_to_sync
 import redis
+import uuid
 
 
 class GroupConsumer(WebsocketConsumer):
+    redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
+    game_threads_started = set()
+    lock = threading.Lock()
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
-        self.lock = threading.Lock()
-        self.active_games = {}
 
+    def regenerate_card_numbers(self, card, existing_cards):
+        new_card = []
+        used_numbers = set()
+    
+        for i in range(5):
+            row = []
+            for j in range(5):
+                # Skip free center spot if you want (j==2 and i==2)
+                if i == 2 and j == 2:
+                    row.append(0)
+                else:
+                    lower_bound = j * 15 + 1
+                    upper_bound = (j + 1) * 15
+                    num = random.randint(lower_bound, upper_bound)
+                    while num in used_numbers:
+                        num = random.randint(lower_bound, upper_bound)
+                    used_numbers.add(num)
+                    row.append(num)
+            new_card.append(row)
+    
+        # Convert to a tuple of tuples for hashability (so we can check uniqueness)
+        card_key = tuple(tuple(r) for r in new_card)
+    
+        # Ensure uniqueness across all cards
+        while card_key in existing_cards:
+            # If duplicate found, regenerate again
+            return self.regenerate_card_numbers(card, existing_cards)
+    
+        # Save new card
+        card.numbers = json.dumps(new_card)
+        card.save(update_fields=['numbers'])
+    
+        # Mark as used
+        existing_cards.add(card_key)
+    
+        return new_card
+    
+    
+    def regenerate_all_cards(self):
+        from game.models import Card, Game
+    
+        # Get all active games that are running
+        active_games = Game.objects.filter(played='Playing')
+        active_cards = set()
+    
+        for game in active_games:
+            # Flatten player cards for this game
+            for player in game.playerCard:
+                for card_id in player['card']:
+                    if isinstance(card_id, list):
+                        active_cards.update(card_id)
+                    else:
+                        active_cards.add(card_id)
+    
+        # Only regenerate cards NOT in active games
+        cards_to_regen = Card.objects.exclude(id__in=active_cards)
+        total = cards_to_regen.count()
+        print(f"[Regen] 🔄 Regenerating {total} cards (excluding active game cards)...")
+    
+        existing_cards = set()
+        for i, card in enumerate(cards_to_regen, 1):
+            self.regenerate_card_numbers(card, existing_cards)
+            if i % 100 == 0:
+                print(f"[Regen] {i}/{total} cards regenerated...")
+    
+        print(f"[Regen] ✅ All {total} non-active cards regenerated successfully.")
+    
     def connect(self):
-        self.group_id = self.scope['url_route']['kwargs']['group_id']
-        self.room_group_name = f"group_{self.group_id}"
+        from group.models import Group
 
-        try:
-            from group.models import GroupGame
-            group_game = GroupGame.objects.select_related('game').get(group__id=int(self.group_id))
-            self.game = group_game.game
-            self.game_id = self.game.id  # So you can reuse GameConsumer logic
+        self.group = self.scope['url_route']['kwargs']['group']
+        self.room_group_name = f'game_{self.group}'
+        self.accept()
 
-            if self.game.played == 'closed':
-                self.accept()
+        async_to_sync(self.channel_layer.group_add)(
+            self.room_group_name,
+            self.channel_name
+        )
+
+        group = Group.objects.get(id=self.group)
+        self.stake = group.stake
+        current_game_id = self.get_group_state("current_game_id")
+        is_running = self.get_game_state("is_running", current_game_id) if current_game_id else False
+        stats = {}
+
+        if is_running:
+            from game.models import Game
+            current_game = Game.objects.get(id=current_game_id)
+            current_time = timezone.now()
+            if current_game.started_at and (current_time - current_game.started_at).total_seconds() > 400 or current_game.played == "closed":
+                print(f"Game {current_game_id} expired after 400s on connect — closing...")
+                current_game.played = "closed"
+                current_game.save(update_fields=["played"])
+                self.set_game_state("is_running", False, current_game_id)
+                self.set_group_state("current_game_id", None)
+                is_running = False
+            else:
+                # Bonus text logic
+                stake_value = int(self.stake or 0)
+                if stake_value in [10, 20, 50] and current_game.numberofplayers >= 10:
+                    bonus_text = "10X"
+                else:
+                    bonus_text = ""
+
+                stats = {
+                    "type": "game_stat",
+                    'number_of_players': current_game.numberofplayers,
+                    'stake': float(current_game.stake),
+                    'winner_price': float(current_game.winner_price),
+                    'bonus': bonus_text,
+                    'number_of_patterns': group.number_of_patterns,
+                    'game_id': current_game.id,
+                    "running": True,
+                    "called_numbers": self.get_game_state("called_numbers", current_game_id) or [],
+                }
                 self.send(text_data=json.dumps({
-                    'type': 'game_expired',
-                    'groupId': self.group_id
+                    "type": "game_in_progress",
+                    "game_id": current_game_id
                 }))
-                self.close()
-                return
+        else:
+            self.try_start_game()
+            stats = {
+                "type": "game_stat",
+                "running": False,
+                "message": "No game is currently running.",
+                "number_of_players": self.get_player_count(),
+                "remaining_seconds": self.get_remaining_time(),
+                "stake": float(self.stake)
+            }
 
-            self.accept()
-
-            # Reuse GameConsumer logic here
-            self.handle_game_state()
-
-            async_to_sync(self.channel_layer.group_add)(
-                self.room_group_name,
-                self.channel_name
-            )
-
-        except GroupGame.DoesNotExist:
-            self.close()
-
-    def handle_game_state(self):
-        # Simplified logic example from your GameConsumer
-        if self.game.played == 'Playing':
-            self.send(text_data=json.dumps({
-                'type': 'called_numbers',
-                'called_numbers': self.get_game_state("called_numbers") or []
-            }))
-        
-        if self.game.played == 'Started':
-            if self.get_player_count() == 0:
-                self.game.played = 'Created'
-                self.game.started_at = None
-                self.game.save()
-                self.set_game_state("is_running", False)
-                self.set_game_state("bingo", False)
-                return
-
-            start_delay = 29
-            start_time_with_delay = self.game.started_at + timezone.timedelta(seconds=start_delay)
-            now = timezone.now()
-            remaining = (start_time_with_delay - now).total_seconds()
-            remaining_seconds = max(int(remaining), 0)
-
-            if remaining < 0:
-                self.close()
-                return
-
-            self.send(text_data=json.dumps({
-                'type': 'timer_message',
-                'remaining_seconds': remaining_seconds,
-                'message': str(self.game.started_at),
-            }))
-
-        # Add any other game state init logic...
-
-    def get_game_state(self, key):
-        redis_key = f"game_state_{self.game_id}"
-        state = self.redis_client.hget(redis_key, key)
-        return json.loads(state) if state else None
-
-    def set_game_state(self, key, value):
-        redis_key = f"game_state_{self.game_id}"
-        self.redis_client.hset(redis_key, key, json.dumps(value))
-
-    def get_player_count(self):
-        count = self.redis_client.get(f"player_count_{self.game_id}")
-        return int(count) if count else 0
+        self.send(text_data=json.dumps(stats))
+        self.send(text_data=json.dumps({
+            'type': 'player_list',
+            'player_list': self.get_selected_players()
+        }))
 
     def disconnect(self, close_code):
         async_to_sync(self.channel_layer.group_discard)(
@@ -100,126 +162,707 @@ class GroupConsumer(WebsocketConsumer):
         )
 
     def receive(self, text_data):
-        data = json.loads(text_data)
-        if data['type'] == 'game_start':
-            self.start_game()
-
-    def start_game(self):
-        if self.game.played == "Created" and self.get_player_count() > 1:
-            self.game.started_at = timezone.now()
-            self.game.played = 'Started'
-            self.game.save()
-            self.set_game_state("is_running", True)
-
+        # Handle empty or None messages
+        if not text_data or text_data.strip() == "":
             self.send(text_data=json.dumps({
-                'type': 'timer_message',
-                'remaining_seconds': 29,
-                'message': str(self.game.started_at),
+                "type": "error",
+                "message": "Empty message received."
+            }))
+            return
+
+        try:
+            data = json.loads(text_data)
+        except json.JSONDecodeError:
+            self.send(text_data=json.dumps({
+                "type": "error",
+                "message": "Invalid JSON format."
+            }))
+            return
+
+        if data['type'] == 'select_number':
+
+            current_game_id = self.get_group_state("current_game_id")
+            is_running = self.get_game_state("is_running", current_game_id) if current_game_id else False
+
+            if is_running:
+                self.send(text_data=json.dumps({
+                    "type": "error",
+                    "message": "Game already in progress. Please wait for the next round."
+                }))
+                return
+
+            self.add_player(data['player_id'], data['card_id'])
+
+        if data['type'] == 'remove_number':
+            self.remove_player(data['userId'])
+
+        if data['type'] == 'bingo':
+            async_to_sync(self.checkBingo(int(data['userId']), data['calledNumbers'], data['gameId']))
+            bingo = self.get_game_state("bingo", game_id=data['gameId'])
+            if bingo:
+                self.set_game_state("is_running", False, game_id=data['gameId'])
+                self.set_group_state("current_game_id", None)
+                self.set_selected_players([])
+                self.set_player_count(0)
+                self.broadcast_player_list()
+
+        if data['type'] == 'card_data':
+            from game.models import Card
+
+            user_cards = []
+            selected_players = self.get_selected_players()
+            for player in selected_players:
+                if player['user'] == int(data.get("userId")):
+                    cards_field = player['card']
+                    if isinstance(cards_field, list):
+                        def flatten(lst):
+                            for item in lst:
+                                if isinstance(item, list):
+                                    yield from flatten(item)
+                                else:
+                                    yield int(item)
+
+                        user_cards = list(flatten(cards_field))
+                    else:
+                        user_cards = [int(cards_field)]
+                    break
+
+            if not user_cards:
+                print("No cards found for user, skipping response.")
+                self.send(text_data=json.dumps({
+                    "type": "no_cards",
+                    "message": "No cards found for user."
+                }))
+                return  # ✅ Don't send empty card data
+
+            cards = Card.objects.filter(id__in=user_cards)
+            bingo_table_data = [
+                {
+                    "id": card.id,
+                    "numbers": json.loads(card.numbers)
+                }
+                for card in cards
+            ]
+            print("Sending cards:", bingo_table_data)
+            self.send(text_data=json.dumps({
+                "type": "card_data",
+                "cards": bingo_table_data
+            }))
+            return
+
+        if data['type'] == "get_group_stat":
+            current_game_id = self.get_group_state("current_game_id")
+            is_running = self.get_game_state("is_running", current_game_id) if current_game_id else False
+
+            stats = {}
+            if is_running:
+                from game.models import Game
+                from group.models import Group
+
+                current_game = Game.objects.get(id=current_game_id)
+                current_time = timezone.now()
+                group = Group.objects.get(id=self.group)
+
+                if current_game.started_at and (current_time - current_game.started_at).total_seconds() > 400 or current_game.played == "closed":
+                    print(f"Game {current_game_id} expired after 400s on connect — closing...")
+                    current_game.played = "closed"
+                    current_game.save(update_fields=["played"])
+                    self.set_game_state("is_running", False, current_game_id)
+                    self.set_group_state("current_game_id", None)
+                    is_running = False
+                else:
+                    # Bonus text logic
+                    stake_value = int(self.group or 0)
+                    if stake_value in [10, 20, 50] and current_game.numberofplayers >= 10:
+                        bonus_text = "10X"
+                    else:
+                        bonus_text = ""
+
+                    stats = {
+                        "type": "game_stat",
+                        'number_of_players': current_game.numberofplayers,
+                        'stake': float(current_game.stake),
+                        'winner_price': float(current_game.winner_price),
+                        'number_of_patterns': group.number_of_patterns,
+                        'bonus': bonus_text,
+                        'game_id': current_game.id,
+                        "running": True,
+                        "called_numbers": self.get_game_state("called_numbers", current_game_id) or [],
+                    }
+            else:
+                stats = {
+                    "type": "game_stat",
+                    "running": False,
+                    "message": "No game is currently running.",
+                    "number_of_players": self.get_player_count(),
+                    "remaining_seconds": self.get_remaining_time(),
+                    "stake": float(self.stake)
+                }
+
+            self.send(text_data=json.dumps(stats))
+            self.send(text_data=json.dumps({
+                'type': 'player_list',
+                'player_list': self.get_selected_players()
             }))
 
-            thread = threading.Thread(target=self.send_random_numbers_periodically)
-            thread.start()
+        if data['type'] == "block_user":
+            user_id = data.get("userId")
+            if user_id:
+                self.block(user_id)
+                self.remove_player(user_id)
+                self.send(text_data=json.dumps({
+                    "type": "user_blocked",
+                    "message": f"User {user_id} has been blocked."
+                }))
+            else:
+                self.send(text_data=json.dumps({
+                    "type": "error",
+                    "message": "User ID not provided."
+                }))
 
-    def send_random_numbers_periodically(self):
-        import json
-        import time
+        if data['type'] == "fetch_active_game":
+            self.send(text_data=json.dumps({
+                "type": "active_game_data",
+                "data": self.get_all_active_games()
+            }))
+
+    # --- Redis state helpers ---
+    def get_selected_players(self):
+        key = f"selected_players_{self.group}"
+        data = self.redis_client.get(key)
+        return json.loads(data) if data else []
+
+    def set_selected_players(self, players):
+        key = f"selected_players_{self.group}"
+        self.redis_client.set(key, json.dumps(players))
+
+    def get_player_count(self):
+        return int(self.redis_client.get(f"player_count_{self.group}") or 0)
+
+    def set_player_count(self, count):
+        self.redis_client.set(f"player_count_{self.group}", count)
+
+    def get_game_state(self, key, game_id):
+        game_id = game_id
+        val = self.redis_client.get(f"game_state_{game_id}_{key}")
+        return json.loads(val) if val else None
+
+    def set_game_state(self, key, value, game_id):
+        game_id = game_id
+        self.redis_client.set(f"game_state_{game_id}_{key}", json.dumps(value))
+
+    def get_group_state(self, key):
+        val = self.redis_client.get(f"group_state_{self.group}_{key}")
+        return json.loads(val) if val else None
+
+    def set_group_state(self, key, value):
+        self.redis_client.set(f"group_state_{self.group}_{key}", json.dumps(value))
+
+    def get_bingo_page_users(self):
+        data = self.redis_client.get(f"bingo_page_users_{self.group}")
+        return set(json.loads(data)) if data else set()
+
+    def set_bingo_page_users(self, users):
+        self.redis_client.set(f"bingo_page_users_{self.group}", json.dumps(list(users)))
+
+    def end_game(self, game_id):
+        self.set_game_state("is_running", False, game_id=game_id)
+        self.set_group_state("current_game_id", None)
+
+    def safe_float(self, val):
+        try:
+            return float(val)
+        except Exception:
+            return 0.0
+
+    def sanitize_data(self, data):
         from decimal import Decimal
-        from game.models import Game
+        if isinstance(data, dict):
+            return {k: self.sanitize_data(v) for k, v in data.items()}
+        elif isinstance(data, list):
+            return [self.sanitize_data(v) for v in data]
+        elif isinstance(data, Decimal):
+            return self.safe_float(data)
+        else:
+            return data
+
+    def calculate_winner_price(self, no_p, stake):
+        try:
+            no_p = float(no_p)
+            stake = float(stake)
+            winner = no_p * stake
+
+            if winner > 100:
+                winner -= (winner * 0.2)
+
+            # Optional: round to 2 decimal places
+            winner = round(winner, 2)
+
+            return winner
+
+        except (ValueError, TypeError) as e:
+            print(f"Error calculating winner price: {e}")
+            return 0.0
+
+    # --- Player management ---
+    def add_player(self, player_id, card_id):
         from custom_auth.models import User
+        from decimal import Decimal
 
-        game = self.game  # Already set in connect()
-        is_running = self.get_game_state("is_running")
+        selected_players = self.get_selected_players()
 
-        start_delay = 29
-        start_time_with_delay = game.started_at + timezone.timedelta(seconds=start_delay)
+        # Remove existing entry for this user (if re-adding)
+        selected_players = [p for p in selected_players if p['user'] != player_id]
 
-        now = timezone.now()
-        remaining = (start_time_with_delay - now).total_seconds()
-        remaining_seconds = max(int(remaining), 0)
+        # Ensure card_id is a list
+        card_ids = card_id if isinstance(card_id, list) else [card_id]
+
+        # Get all used card IDs (excluding current user)
+        used_cards = set()
+        for player in selected_players:
+            used_cards.update(player['card'])
+
+        # Check if requested cards are already taken
+        conflicting_cards = [cid for cid in card_ids if cid in used_cards]
+        if conflicting_cards:
+            async_to_sync(self.channel_layer.send)(
+                self.channel_name,
+                {
+                    'type': 'error',
+                    'message': f"Card(s) already selected: {conflicting_cards}. Please choose different card(s)."
+                }
+            )
+            return
+
+        # User lookup and validation
+        user = User.objects.get(id=player_id)
+        if not user.is_active:
+            async_to_sync(self.channel_layer.send)(
+                self.channel_name,
+                {
+                    'type': 'error',
+                    'message': 'User account is inactive.'
+                }
+            )
+            return
+
+        total_cost = Decimal(self.stake) * len(card_ids)
+        available_balance=user.wallet + user.bonus
+
+        if available_balance< total_cost:
+            async_to_sync(self.channel_layer.send)(
+                self.channel_name,
+                {
+                    'type': 'error',
+                    'message': 'Insufficient balance to join the game.'
+                }
+            )
+            return
+
+        # Add the player to the selection
+        selected_players.append({'user': player_id, 'card': card_ids})
+        self.set_selected_players(selected_players)
+
+        # Update player count
+        player_count = sum(len(p['card']) for p in selected_players)
+        self.set_player_count(player_count)
+
+        # Notify user
+        self.send(text_data=json.dumps({
+            "type": "success",
+            "message": "card selected!",
+            "card_ids": card_ids
+        }))
+
+        # Notify all players
+        self.broadcast_player_list()
+
+    def remove_player(self, player_id):
+        selected_players = [p for p in self.get_selected_players() if p['user'] != player_id]
+        self.set_selected_players(selected_players)
+        self.set_player_count(sum(len(p['card']) for p in selected_players))
+        self.send(text_data=json.dumps({
+            "type": "player_removed",
+            "user_id": player_id
+        }))
+        self.broadcast_player_list()
+
+    def broadcast_player_list(self):
+        async_to_sync(self.channel_layer.group_send)(
+            self.room_group_name,
+            {
+                'type': 'update_player_list',
+                'player_list': self.get_selected_players()
+            }
+        )
+        async_to_sync(self.channel_layer.group_send)(
+            self.room_group_name,
+            {
+                'type': 'game_stat',
+                'number_of_players': self.get_player_count(),
+                'stake': float(self.stake),
+                'remaining_seconds': self.get_remaining_time()
+            }
+        )
+
+    def try_start_game(self):
+        """
+        Attempts to start a new game in the group.
+        - Closes expired running games.
+        - Starts new game based on recurrence or scheduled time.
+        - Sends countdown updates to all group members.
+        """
+
+        from game.models import Game
+        from group.models import Group
+
+        current_time = timezone.now()
+        current_game_id = self.get_group_state("current_game_id")
+        next_game_start = self.get_group_state("next_game_start")
+
+        # ✅ Check if a running game has expired (e.g., ran too long)
+        if current_game_id:
+            is_running = self.get_game_state("is_running", current_game_id)
+            if is_running:
+                try:
+                    current_game = Game.objects.get(id=current_game_id)
+                    if current_game.started_at and (current_time - current_game.started_at).total_seconds() > 400:
+                        print(f"Game {current_game_id} expired after 400s — closing...")
+                        current_game.played = "closed"
+                        current_game.save(update_fields=["played"])
+                        self.set_game_state("is_running", False, current_game_id)
+                        self.set_group_state("current_game_id", None)
+                        current_game_id = None
+                except Game.DoesNotExist:
+                    print(f"Game {current_game_id} not found.")
+                    self.set_group_state("current_game_id", None)
+
+        # 🔁 If a game is still running after timeout check, skip starting new
+        if current_game_id and self.get_game_state("is_running", current_game_id):
+            async_to_sync(self.channel_layer.group_send)(
+                self.room_group_name,
+                {
+                    "type": "game_in_progress",
+                    "game_id": current_game_id
+                }
+            )
+            return
+
+        # ✅ Get group info
+        group = self.group if isinstance(self.group, Group) else Group.objects.get(id=self.group)
+
+        remaining_seconds=0
+
+        if next_game_start:
+            remaining_seconds = int(next_game_start - current_time.timestamp())
+
+        # ✅ Determine when to start next game
+        if not next_game_start or next_game_start < current_time.timestamp() or remaining_seconds > group.recurrence_interval_seconds:
+            if group.is_recurring and group.recurrence_interval_seconds:
+
+                next_start_time = current_time.timestamp() + group.recurrence_interval_seconds
+            elif group.scheduled_datetime:
+                # For scheduled games — only once
+                next_start_time = group.scheduled_datetime.timestamp()
+            else:
+                # Default fallback: start immediately + 30s countdown
+                next_start_time = None
+
+            self.set_group_state("next_game_start", next_start_time)
+            remaining_seconds = int(next_start_time - current_time.timestamp())
+
+            # ✅ Send remaining seconds (countdown) to all users
+            if next_start_time:
+                async_to_sync(self.channel_layer.group_send)(
+                    self.room_group_name,
+                    {
+                        'type': 'timer_message',
+                        'remaining_seconds': remaining_seconds,
+                    }
+                )
+
+                # ✅ Delayed start (e.g., 30s countdown)
+                def delayed_start():
+                    if remaining_seconds > 0:
+                        time.sleep(remaining_seconds)
+                    self._start_game_logic()
+
+                threading.Thread(target=delayed_start, daemon=True).start()
+
+    def _start_game_logic(self):
+        from game.models import Game
+        from django.utils import timezone
+
+        selected_players = self.get_selected_players()
+        if not selected_players or len(selected_players) < 2:
+            async_to_sync(self.channel_layer.group_send)(
+                self.room_group_name,
+                {
+                    'type': 'error',
+                    'message': 'Not enough players selected. Cannot start game.'
+                }
+            )
+            self.try_start_game()
+            return
+
+        player_card_map = {str(p['user']): p['card'] for p in selected_players}
+        new_game = Game.objects.create(
+            stake=self.stake,
+            numberofplayers=sum(len(c) for c in player_card_map.values()),
+            playerCard=player_card_map,
+            random_numbers=json.dumps(self.generate_random_numbers()),
+            winner_price=0,
+            admin_cut=0,
+            created_at=timezone.now(),
+            started_at=timezone.now(),
+            played='Started'
+        )
+        new_game.save()
+        print(f"New game created with ID: {new_game.id}")
+
+        self.set_game_state("is_running", True, game_id=new_game.id)
+        self.set_group_state("current_game_id", new_game.id)
 
         async_to_sync(self.channel_layer.group_send)(
             self.room_group_name,
             {
-                'type': 'timer_message',
-                'remaining_seconds': remaining_seconds,
-                'message': str(game.started_at),
+                'type': 'game_started',
+                'game_id': new_game.id,
+                'player_list': selected_players,
+                'group': self.group,
+                'stake': float(self.stake)
             }
         )
 
-        time.sleep(30)  # wait before playing
+        threading.Thread(
+            target=self.start_game_with_random_numbers,
+            args=(new_game, selected_players),
+            daemon=True
+        ).start()
+
+    # # --- Automatic Game Loop ---
+    # def auto_game_start_loop(self):
+    #     while True:
+    #         selected_players = self.get_selected_players()
+    #         player_count = self.get_player_count()
+    #         active_games = self.get_active_games()
+
+    #         print(f"Checking game start conditions: {player_count} players, {len(active_games)} active games")
+    #         if len(active_games) < 2:
+    #             from game.models import Game  # ✅ Make sure it's the correct path
+    #             from django.utils import timezone
+
+    #             self.set_stake_state("next_game_start", timezone.now().timestamp() + 30)
+
+    #             async_to_sync(self.channel_layer.group_send)(
+    #                 self.room_group_name,
+    #                 {
+    #                     'type': 'timer_message',
+    #                     'remaining_seconds': 30,
+    #                 }
+    #             )
+
+    #             time.sleep(30)  # Wait before checking again
+
+    #             print("Starting a new game with selected players:", selected_players)
+    #             # Build the playerCard map: {user_id: [card_ids]}
+    #             player_card_map = {
+    #                 str(p['user']): p['card'] for p in selected_players
+    #             }
+
+    #             # Calculate number of cards
+    #             number_of_cards = sum(len(c) for c in player_card_map.values())
+
+    #             # Create game in DB
+    #             new_game = Game.objects.create(
+    #                 stake=self.stake,
+    #                 numberofplayers=number_of_cards,
+    #                 playerCard=player_card_map,
+    #                 random_numbers=json.dumps(self.generate_random_numbers()),
+    #                 winner_price=0,  # Can be updated later
+    #                 admin_cut=0,     # Can be calculated
+    #                 created_at=timezone.now(),
+    #                 started_at=timezone.now(),
+    #                 played='Started'
+    #             )
+    #             new_game.save()
+    #             print(f"New game created with ID: {new_game.id} and stake: {self.stake}")
+
+    #             # Add game_id to Redis active games
+    #             active_games.append(new_game.id)
+    #             self.set_active_games(active_games)
+
+    #             # Broadcast the game start
+    #             async_to_sync(self.channel_layer.group_send)(
+    #                 self.room_group_name,
+    #                 {
+    #                     'type': 'game_started',
+    #                     'game_id': new_game.id,
+    #                     'player_list': selected_players,
+    #                     'stake': self.stake
+    #                 }
+    #             )
+
+    #             print(f"Starting game with ID: {new_game.id} and players: {selected_players}")
+    #             threading.Thread(
+    #                 target=self.start_game_with_random_numbers,
+    #                 args=(new_game, selected_players),
+    #                 daemon=True
+    #             ).start()
+    #             print(f"Game thread started for game ID: {new_game.id}")
+    #             # Reset players for new cycle
+    #             self.set_selected_players([])
+    #             self.set_player_count(0)
+    #             self.broadcast_player_list()
+
+    def get_remaining_time(self):
+        next_start_ts = self.get_group_state("next_game_start")
+        if not next_start_ts:
+            return 0
+        now = time.time()
+        remaining = max(0, int(next_start_ts - now))
+        return remaining
+
+    def generate_random_numbers(self):
+        import secrets
+        numbers = list(range(1, 76))
+        # Fisher-Yates shuffle using cryptographic randomness
+        for i in range(len(numbers) - 1, 0, -1):
+            j = secrets.randbelow(i + 1)
+            numbers[i], numbers[j] = numbers[j], numbers[i]
+        return numbers
+
+    def start_game_with_random_numbers(self, game, selected_players):
+        from custom_auth.models import User
+        from decimal import Decimal
+        import json
+        from game.models import Game, UserGameParticipation  # ✅ Import new model
+        from group.models import Group
+
+        self.game_id = game.id
+        self.set_game_state("is_running", True, game.id)
+        self.set_game_state("bingo", False, game.id)
+
         game.played = 'Playing'
         game.save()
+
+        group = Group.objects.get(id=self.group)
 
         async_to_sync(self.channel_layer.group_send)(
             self.room_group_name,
             {
                 'type': 'playing',
-                'message': 'game is now playing'
+                'game_id': game.id,
+                'message': 'Game is now playing'
             }
         )
 
         stake_amount = Decimal(game.stake)
-        selected_players = self.get_selected_players()
-        players = selected_players
-        total_cards = sum(len(player["card"]) for player in players)
-        game.numberofplayers = int(total_cards)
-        winner_price = total_cards * int(game.stake)
-
-        if winner_price >= 100:
-            admin_cut = winner_price * 0.2
-            winner_price = winner_price - admin_cut
-            game.admin_cut = admin_cut
-
-        game.winner_price = winner_price
-
-        bingo_page_users = self.get_bingo_page_users()
         updated_player_cards = []
 
-        for entry in players:
+        # Remove duplicate users: keep only last submitted entry per user
+        unique_entries = {entry["user"]: entry for entry in selected_players}
+        deduplicated_players = list(unique_entries.values())
+
+        for entry in deduplicated_players:
             try:
                 user_id = entry["user"]
                 cards = entry["card"]
-
-                flattened_cards = [card_id for sublist in cards for card_id in sublist] if isinstance(cards[0], list) else cards
-                num_cards = len(flattened_cards)
-                total_deduction = stake_amount * num_cards
-
+                flat_cards = [c for sub in cards for c in sub] if isinstance(cards[0], list) else cards
+                total_deduction = stake_amount * len(flat_cards)
                 user = User.objects.get(id=user_id)
 
-                if user_id in bingo_page_users:
-                    if user.wallet >= total_deduction:
-                        user.wallet -= total_deduction
-                        user.save()
-                        entry["card"] = flattened_cards
-                        updated_player_cards.append(entry)
-                    else:
-                        self.remove_player(user_id)
-                else:
-                    print(f"User {user_id} is not on the bingo page.")
+                # ✅ STEP 1: Check combined balance (wallet + bonus)
+                available_balance = user.wallet + user.bonus
+                if available_balance < total_deduction:
                     self.remove_player(user_id)
+                    continue
 
-            except User.DoesNotExist:
-                print(f"User with id {user_id} not found.")
+                # ✅ STEP 2: Deduct from wallet first
+                remaining = total_deduction
+                if user.wallet >= remaining:
+                    user.wallet -= remaining
+                    remaining = Decimal('0')
+                else:
+                    remaining -= user.wallet
+                    user.wallet = Decimal('0')
+
+                # ✅ STEP 3: Deduct remaining from bonus
+                if remaining > 0:
+                    user.bonus -= remaining
+
+                # ✅ STEP 4: Record user-game participation
+                participation, created = UserGameParticipation.objects.get_or_create(
+                    user=user,
+                    game=game,
+                    defaults={'times_played': 1}
+                )
+                if not created:
+                    participation.times_played += 1
+                    participation.save(update_fields=['times_played'])
+
+                # ✅ STEP 5: Update user's total games played
+                try:
+                    user.no_of_games_played = (user.no_of_games_played or 0) + 1
+                except AttributeError:
+                    print(f"User {user_id} does not have 'no_of_games_played' field, skipping increment.")
+
+                user.save()
+                entry["card"] = flat_cards
+                updated_player_cards.append(entry)
+
             except Exception as e:
-                print(f"Error processing deduction: {e}")
+                print(f"[Deduction or Participation Error] {e}")
+                self.remove_player(user_id)
 
-        game.playerCard = json.dumps(updated_player_cards)
+        game.numberofplayers = sum(len(p['card']) for p in updated_player_cards)
+        game.playerCard = updated_player_cards
+
+        winner_price = stake_amount * game.numberofplayers
+
+        if winner_price >= 100:
+            admin_cut = winner_price * Decimal('0.2')  # 20%
+            winner_price -= admin_cut
+            game.admin_cut = admin_cut
+            group.group_wallet += admin_cut * group.group_percentage
+        elif 50 <= winner_price < 100:
+            admin_cut = winner_price * Decimal('0.1')  # 10%
+            winner_price -= admin_cut
+            game.admin_cut = admin_cut
+            group.group_wallet += admin_cut * group.group_percentage
+        else:
+            game.admin_cut = Decimal('0')
+
+        game.winner_price = winner_price
         game.save()
+        group.save()
+
+        stake_value = int(self.stake or 0)
+        if stake_value in [10, 20, 50] and game.numberofplayers >= 10:
+            bonus_text = "10X"
+        else:
+            bonus_text = ""
 
         async_to_sync(self.channel_layer.group_send)(
             self.room_group_name,
             {
-                'type': 'game_stats',
-                'number_of_players': self.get_player_count(),
-                'stake': game.stake,
-                'winner_price': game.winner_price,
-                'bonus': game.bonus,
+                'type': 'game_stat',
+                'number_of_players': game.numberofplayers,
+                'stake': float(self.stake),
+                'winner_price': float(game.winner_price),
+                'number_of_patterns': group.number_of_patterns,
+                'bonus': bonus_text,
+                'game_id': game.id,
+                "is_running": True,
             }
         )
 
-        for num in self.game_random_numbers:
-            is_running = self.get_game_state("is_running")
-            if not is_running:
+        time.sleep(5)
+        # Broadcast random numbers every 4 seconds
+        for num in json.loads(game.random_numbers):
+            is_running = self.get_game_state("is_running", game.id)
+            bingo = self.get_game_state("bingo", game.id)
+            if not is_running or bingo:
                 break
 
             with self.lock:
@@ -227,94 +870,92 @@ class GroupConsumer(WebsocketConsumer):
                     self.room_group_name,
                     {
                         'type': 'random_number',
-                        'random_number': num
+                        'random_number': num,
+                        'game_id': game.id
                     }
                 )
 
-                called = self.get_game_state("called_numbers") or []
+                called = self.get_game_state("called_numbers", game.id) or []
                 if not isinstance(called, list):
                     called = []
                 called.append(num)
-                self.set_game_state("called_numbers", called)
+                self.set_game_state("called_numbers", called, game.id)
 
-            time.sleep(5)
+            time.sleep(4)
 
-        time.sleep(10)
+        game = Game.objects.get(id=game.id)
         game.played = 'closed'
         game.save()
-        self.set_game_state("is_running", False)
+        self.set_game_state("is_running", False, game.id)
 
-        if self.game_id in self.active_games:
-            del self.active_games[self.game_id]
+        # Reset selection state
+        self.set_selected_players([])
+        self.set_player_count(0)
+        self.broadcast_player_list()
+        # self.regenerate_all_cards()
+        self.try_start_game()
 
-        self.close()
+     # NEW HELPER: Update consecutive losses after game ends with a winner
+    def update_consecutive_losses_after_game(self, game_id, winner_user_id):
+            from custom_auth.models import User
+            from game.models import UserGameParticipation
 
-    def random_number(self, event):
-        """Handles individual random number events received from group_send."""
-        random_number = event['random_number']
-        self.send(text_data=json.dumps({
-            'type': 'random_number',
-            'random_number': random_number
-        }))
+            # Get all user IDs who participated in this game
+            participant_user_ids = UserGameParticipation.objects.filter(game_id=game_id).values_list('user_id',
+                                                                                                     flat=True)
+            for user_id in participant_user_ids:
+                try:
+                    user = User.objects.get(id=user_id)
+            
+                    # Ensure defaults for safety
+                    if user.consecutive_losses is None:
+                        user.consecutive_losses = 0
+                    if user.bonus is None:
+                        user.bonus = 0
+            
+                    if user_id == winner_user_id:
+                        # Winner: reset loss streak
+                        user.consecutive_losses = 0
+                        user.save(update_fields=['consecutive_losses'])
+                    else:
+                        user.consecutive_losses += 1
+                        if user.consecutive_losses >= 10:
+                            user.bonus += 10
+                            user.consecutive_losses = 0
+                            user.save(update_fields=['bonus', 'consecutive_losses'])
+                        else:
+                            user.save(update_fields=['consecutive_losses'])
+            
+                    print(
+                        f"[LOSS TRACK] User {user_id}: consecutive_losses = {user.consecutive_losses}, bonus = {user.bonus}")
+                except User.DoesNotExist:
+                    continue
 
-    def game_start(self, event):
-        message = event['message']
-        self.send(text_data=json.dumps({
-            'type': 'game_start',
-            'message': message
-        }))
-
-    def playing(self, event):
-        message = event['message']
-        self.send(text_data=json.dumps({
-            'type': 'playing',
-            'message': message
-        }))
-
-    def timer_message(self, event):
-        message = event['message']
-        self.send(text_data=json.dumps({
-            'type': 'timer_message',
-            'remaining_seconds': event['remaining_seconds'],
-            'message': message
-        }))
-
-    def result(self, event):
-        result = event['data']
-        self.send(text_data=json.dumps({
-            'type': 'result',
-            'data': result
-        }))
-
-    def selected_numbers(self, event):
-        selected_numbers = event['selected_numbers']
-        self.send(text_data=json.dumps({
-            'type': 'selected_numbers',
-            'selected_numbers': selected_numbers
-        }))
-
-    def checkBingo(self, user_id, calledNumbers):
+    def checkBingo(self, user_id, calledNumbers, game_id):
         from game.models import Card, Game
         from custom_auth.models import User
-        
-        game = Game.objects.get(id=int(self.game_id))
+        from group.models import Group
+
+        game = Game.objects.get(id=int(game_id))
+        group = Group.objects.get(id=int(self.group))
         result = []
-        
+
         # Retrieve player's cards based on the provided user_id
         print(game.playerCard)
-        selected_players = self.get_selected_players()
+        selected_players = game.playerCard
         players = selected_players
-        player_cards = [entry['card'] for entry in players if entry['user'] == user_id]
+        player_cards = [entry['card'] for entry in players if int(entry['user']) == int(user_id)]
 
         if not player_cards:
             # User does not have any cards associated
             result.append({'user_id': user_id, 'message': 'Not a Player'})
             self.send(text_data=json.dumps({
                 'type': 'result',
-                'data': result
+                'data': result,
+                'game_id': game.id,
             }))
             return
-        
+
         # Flatten it safely
         def flatten(lst):
             for item in lst:
@@ -326,23 +967,23 @@ class GroupConsumer(WebsocketConsumer):
         user_cards = list(flatten(player_cards))
 
         print(f"Checking Bingo for user {user_id} with cards: {user_cards}")
-        
+
         if game.winner != 0:
             return
-        
+
         if game.played == 'closed':
-            return 
-        
-        # Include a zero at the end of the called numbers (for "free space" if applicable)
-        if not set(calledNumbers).issubset(self.get_game_state("called_numbers") or []):
-            print("Called numbers do not match the game's called numbers.")
             return
-        
+
+            # Include a zero at the end of the called numbers (for "free space" if applicable)
+        # if not set(calledNumbers).issubset(self.get_game_state("called_numbers",game.id) or []):
+        #     print("Called numbers do not match the game's called numbers.")
+        #     return
+
         called_numbers_list = calledNumbers + [0]
         game.total_calls = len(called_numbers_list)
-        game.save_called_numbers(called_numbers_list) 
+        game.save_called_numbers(called_numbers_list)
         game.save()
-        
+
         def flatten_card_ids(card_list):
             """Recursively flatten card IDs to handle any nested lists."""
             flattened = []
@@ -363,12 +1004,43 @@ class GroupConsumer(WebsocketConsumer):
             numbers = json.loads(card.numbers)
             print(f"Checking card {card.id} for user {user_id} with numbers: {numbers}")
             # Check if this card has a Bingo with the called numbers
-            winning_numbers = self.has_bingo(numbers, called_numbers_list)
-            
-            if winning_numbers:
-                
+            winning_numbers, patterns_found= self.has_bingo(numbers, called_numbers_list)
+
+            if winning_numbers and group.number_of_patterns <= patterns_found:
+
                 acc = User.objects.get(id=user_id)
-                
+
+                # Get stake amount (assuming game.stake or similar field exists)
+                stake = game.stake
+                bones_amount = 0
+
+                if stake == 10 or stake == 20 or stake == 50:
+
+                    if game.numberofplayers >= 10:
+                    
+                        # Determine number of bones
+                        bones = len(called_numbers_list) 
+
+                        # Determine multiplier based on bones
+                        if bones <= 5:
+                            multiplier = 10
+                        elif bones == 6:
+                            multiplier = 8
+                        elif bones == 7:
+                            multiplier = 6
+                        elif bones == 8:
+                            multiplier = 4
+                        elif bones == 9:
+                            multiplier = 3
+                        elif bones == 10:
+                            multiplier = 2
+                        elif bones == 11:
+                            multiplier = 1
+                        else:
+                            multiplier = 0
+                    
+                        bones_amount = stake * multiplier
+                self.update_consecutive_losses_after_game(game_id, user_id)
                 # Bingo achieved
                 result.append({
                     'card_name': card.id,
@@ -377,28 +1049,54 @@ class GroupConsumer(WebsocketConsumer):
                     'user_id': acc.id,
                     'card': json.loads(card.numbers),
                     'winning_numbers': winning_numbers,
-                    'called_numbers': called_numbers_list
+                    'called_numbers': called_numbers_list,
+                    'bones_won': bones_amount,
                 })
-                
+
                 # Close the game
                 game.played = "closed"
                 game.winner = user_id
+                game.winner_card=card.id
+                game.bonus = bones_amount
+                group.group_wallet -= bones_amount * group.group_percentage
+                group.save()
                 game.save()
-                
+
                 # Notify all players in the room group about the result
                 async_to_sync(self.channel_layer.group_send)(
                     self.room_group_name,
                     {
                         'type': 'result',
-                        'data': result
+                        'data': result,
+                        'game_id': game.id
                     }
                 )
-                bingo = self.get_game_state("bingo")
+                bingo = self.get_game_state("bingo", game.id)
                 if bingo == False:
-                    acc.wallet += game.winner_price
+                    acc.wallet += game.winner_price + bones_amount
                     acc.save()
-                    self.set_game_state("bingo",True)
+                    self.set_game_state("bingo", True, game.id)
                 return  # Exit once Bingo is found for any card
+            
+        for card in cards:
+            numbers = json.loads(card.numbers)
+            print(f"Checking card {card.id} for user {user_id} with numbers: {numbers}")
+            # Check if this card has a Bingo with the called numbers
+            winning_numbers= self.has_bingo(numbers, called_numbers_list)
+
+            if winning_numbers:
+                result.append({
+                    'user_id': user_id,
+                    'message': 'Partial Bingo',
+                    'cards_checked': player_cards,
+                    'called_numbers': called_numbers_list
+                })
+                self.send(text_data=json.dumps({
+                    'type': 'result',
+                    'data': result,
+                    'game_id': game.id
+                }))
+                return
 
         # If no Bingo was found for any card
         result.append({
@@ -409,14 +1107,15 @@ class GroupConsumer(WebsocketConsumer):
         })
         self.send(text_data=json.dumps({
             'type': 'result',
-            'data': result
+            'data': result,
+            'game_id': game.id
         }))
-
 
     def has_bingo(self, card, called_numbers):
         winning_columns = 0
         corner_count = 0
         winning_numbers = []
+        patterns_found = 0
 
         print("Checking card for Bingo:", card)
         print("Called numbers:", called_numbers)
@@ -426,19 +1125,23 @@ class GroupConsumer(WebsocketConsumer):
         diagonal1 = [card[i][len(card) - 1 - i] for i in range(len(card))]
         if all(number in called_numbers for number in diagonal2):
             winning_numbers.extend([1, 7, 13, 19, 25])
+            patterns_found += 1
         if all(number in called_numbers for number in diagonal1):
             winning_numbers.extend([5, 9, 13, 17, 21])
+            patterns_found += 1
 
         # Check rows
         for row_index, row in enumerate(card):
             if all(number in called_numbers for number in row):
                 winning_numbers.extend([(row_index * 5) + i + 1 for i in range(5)])
+                patterns_found += 1
 
         # Check columns
         for col in range(len(card[0])):
             if all(card[row][col] in called_numbers for row in range(len(card))):
                 winning_columns = col + 1
                 winning_numbers.extend([winning_columns + (i * 5) for i in range(5)])
+                patterns_found += 1
 
         # Check corners
         if card[0][0] in called_numbers:
@@ -452,165 +1155,72 @@ class GroupConsumer(WebsocketConsumer):
 
         if corner_count == 4:
             winning_numbers.extend([1, 5, 21, 25])
+            patterns_found += 1
 
-        return winning_numbers
+        inner_corner_count = 0
+        # Check the top-left corner (1, 1)
+        if card[1][1] in called_numbers:
+            inner_corner_count += 1
+
+        # Check the top-right corner (1, 5)
+        if card[1][3] in called_numbers:
+            inner_corner_count += 1
+
+        # Check the bottom-left corner (5, 1)
+        if card[3][1] in called_numbers:
+            inner_corner_count += 1
+
+        # Check the bottom-right corner (5, 5)
+        if card[3][3] in called_numbers:
+            inner_corner_count += 1
+
+        if inner_corner_count == 4:
+            winning_numbers.extend([7, 9, 17, 19])
+            patterns_found += 1
+
+        return winning_numbers, patterns_found
 
     def block(self, user_id):
         from game.models import Game
-        last_game = Game.objects.get(id=self.game_id)
+        current_game_id = self.get_stake_state("current_game_id")
+        if not current_game_id:
+            return
+        last_game = Game.objects.get(id=current_game_id)
         players = json.loads(last_game.playerCard)
         updated_list = [item for item in players if int(item['user']) != user_id]
         last_game.playerCard = json.dumps(updated_list)
         last_game.numberofplayers = len(updated_list)
         last_game.save()
 
-    def add_player(self, player_id, card_id):
-        from custom_auth.models import User
-        from decimal import Decimal
-        from django.utils import timezone
-        from django.db.models import Q
-        from game.models import Game
-
-        game = self.game  # Already set in connect()
-        now = timezone.now()
-
-        # Step 1: Get games with specific statuses
-        active_games_qs = Game.objects.filter(played__in=['Started', 'Created', 'Playing'])
-
-        # Step 2: Define expiration conditions
-        expired_games = active_games_qs.filter(
-            Q(played='Created', started_at__lt=now - timezone.timedelta(seconds=30)) |
-            Q(played='Started', started_at__lt=now - timezone.timedelta(seconds=30)) |
-            Q(played='Playing') & (Q(started_at__lt=now - timezone.timedelta(seconds=375)))
-        )
-
-        # Step 3: Close expired games
-        expired_games.update(played='closed')
-
-        # ✅ Check for other active games with same stake
-        active_games_with_same_stake = Game.objects.filter(
-            stake=game.stake,
-            played='Playing',
-            numberofplayers__gt=2
-        ).exclude(id=game.id).count()
-
-        if active_games_with_same_stake > 2:
-            async_to_sync(self.channel_layer.send)(
-                self.channel_name,
-                {
-                    'type': 'error',
-                    'message': 'Please wait: Maximum number of active games for this stake is reached.'
-                }
-            )
-            return
-
-        # ❗ Disallow joining if already in progress
-        if game.played == "playing":
-            async_to_sync(self.channel_layer.send)(
-                self.channel_name,
-                {
-                    'type': 'error',
-                    'message': 'Cannot join: The game is already in progress.'
-                }
-            )
-            return
-
-        # ✅ Update selected players
-        selected_players = self.get_selected_players()
-        print(f"[add_player][before] For game {self.game_id}: {selected_players}")
-        
-        selected_players = [p for p in selected_players if p['user'] != player_id]
-
-        card_ids = card_id if isinstance(card_id, list) else [card_id]
-        selected_players.append({'user': player_id, 'card': card_ids})
-        print(f"[add_player][after append] For game {self.game_id}: {selected_players}")
-        self.set_selected_players(selected_players)
-
-        # ✅ Update count in Redis
-        player_count = sum(len(p['card']) if isinstance(p['card'], list) else 1 for p in selected_players)
-        self.set_player_count(player_count)
-
-        # ✅ Balance Check
-        user = User.objects.get(id=player_id)
-        total_cost = Decimal(game.stake) * len(card_ids)
-
-        if user.wallet < total_cost:
-            async_to_sync(self.channel_layer.send)(
-                self.channel_name,
-                {
-                    'type': 'error',
-                    'message': 'Insufficient balance to join the game.'
-                }
-            )
-            return
-
-        async_to_sync(self.channel_layer.send)(
-            self.channel_name,
-            {
-                'type': 'sucess',
-                'message': 'Game will start soon'
-            }
-        )
-
-        # Broadcast the updated player list over the socket
-        async_to_sync(self.channel_layer.group_send)(
-            self.room_group_name,
-            {
-                'type': 'update_player_list',
-                'player_list': self.get_selected_players()
-            }
-        )
-
-        async_to_sync(self.channel_layer.group_send)(
-            self.room_group_name,
-            {
-                'type': 'game_stat',
-                'number_of_players': self.get_player_count(),
-                'stake': game.stake,
-            }
-        )
-    
-    def remove_player(self, player_id):
-        game = self.game  # Use already loaded game object
-
-        selected_players = self.get_selected_players()
-        print(f"[remove_player][before] For game {self.game_id}: {selected_players}")
-        selected_players = [p for p in selected_players if p['user'] != player_id]
-        print(f"[remove_player][after remove] For game {self.game_id}: {selected_players}")
-        self.set_selected_players(selected_players)
-
-        player_count = sum(len(p['card']) if isinstance(p['card'], list) else 1 for p in selected_players)
-        self.set_player_count(player_count)
-
-        if player_count == 0:
-            game.played = 'Created'
-            game.started_at = None
-            game.save()
-            self.set_game_state("is_running", False)
-            self.set_game_state("bingo", False)
-
-        # Notify group of player update
-        async_to_sync(self.channel_layer.group_send)(
-            self.room_group_name,
-            {
-                'type': 'update_player_list',
-                'player_list': self.get_selected_players()
-            }
-        )
-
-        async_to_sync(self.channel_layer.group_send)(
-            self.room_group_name,
-            {
-                'type': 'game_stat',
-                'number_of_players': self.get_player_count(),
-                'stake': game.stake or 0,
-            }
-        )
-
+    # --- WebSocket Handlers ---
     def update_player_list(self, event):
         self.send(text_data=json.dumps({
             'type': 'player_list',
             'player_list': event['player_list']
+        }))
+
+    def game_stat(self, event):
+        self.send(text_data=json.dumps({
+            'type': 'game_stat',
+            'number_of_players': event['number_of_players'],
+            'stake': event['stake'],
+            'winner_price': event.get('winner_price', 0),
+            'bonus': event.get('bonus', ""),
+            'game_id': event.get('game_id', None),
+            'is_running': event.get('is_running', False),
+            'remaining_seconds': event.get('remaining_seconds', 0),
+            'called_numbers': event.get('called_numbers', []),
+            'number_of_patterns': event.get('number_of_patterns', 1),
+        }))
+
+    def game_started(self, event):
+        print("🎯 [WS] game_started called:", event)
+        self.send(text_data=json.dumps({
+            'type': 'game_started',
+            'game_id': event['game_id'],
+            'player_list': event['player_list'],
+            'stake': event['stake'],
+            'group': event['group']
         }))
 
     def error(self, event):
@@ -619,17 +1229,24 @@ class GroupConsumer(WebsocketConsumer):
             'message': event['message']
         }))
 
-    def sucess(self, event):
+    def random_number(self, event):
         self.send(text_data=json.dumps({
-            'type': 'sucess',
-            'message': event['message']
+            'type': 'random_number',
+            'random_number': event['random_number'],
+            'game_id': event['game_id']
         }))
 
-    def game_stat(self, event):
+    def timer_message(self, event):
         self.send(text_data=json.dumps({
-            'type': 'game_stat',
-            'number_of_players': event['number_of_players'],
-            'stake': event['stake']
+            'type': 'timer_message',
+            'remaining_seconds': event['remaining_seconds'],
+        }))
+
+    def playing(self, event):
+        self.send(text_data=json.dumps({
+            'type': 'playing',
+            'game_id': event['game_id'],
+            'message': event['message']
         }))
 
     def game_stats(self, event):
@@ -638,5 +1255,25 @@ class GroupConsumer(WebsocketConsumer):
             'number_of_players': event['number_of_players'],
             'stake': event['stake'],
             'winner_price': event['winner_price'],
-            'bonus': event['bonus']
+            'bonus': event['bonus'],
+            'game_id': event['game_id']
+        }))
+
+    def result(self, event):
+        self.send(text_data=json.dumps({
+            'type': 'result',
+            'data': event['data'],
+            'game_id': event['game_id']
+        }))
+
+    def no_cards(self, event):
+        self.send(text_data=json.dumps({
+            'type': 'no_cards',
+            'message': event['message']
+        }))
+
+    def active_game_data(self, event):
+        self.send(text_data=json.dumps({
+            'type': 'active_game_data',
+            'data': event['data']
         }))

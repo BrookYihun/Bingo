@@ -4,7 +4,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated , AllowAny
 from .models import Group
 from .serializer import GroupSerializer
 from django.utils.crypto import get_random_string
@@ -19,10 +19,6 @@ class GroupCreateUpdateView(APIView):
 
         if not user.is_authenticated:
             return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
-
-        if not data.get('group_link'):
-            from django.utils.crypto import get_random_string
-            data['group_link'] = get_random_string(16)
 
         data['owner'] = user.id
 
@@ -81,21 +77,50 @@ class GroupCreateUpdateView(APIView):
         if group.owner != user:
             return Response({'error': 'Only the group owner can delete this group'}, status=status.HTTP_403_FORBIDDEN)
 
-        group.delete()
+        group.is_active = False
+        group.save()
         return Response({'message': 'Group deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+    
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def subscribe_via_referral(request):
+    """
+    Accepts: {
+    "telegram_id": "123456789",
+    "referral_code": "PR000001"
+    }
+    """
+    telegram_id = request.data.get("telegram_id")
+    referral_code = request.data.get("referral_code")
+
+    if not telegram_id or not referral_code:
+        return Response({"detail": "telegram_id and referral_code required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user = User.objects.get(telegram_id=telegram_id)
+    except User.DoesNotExist:
+        return Response({"detail": "User with given telegram_id not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    try:
+        group = Group.objects.get(referral_code=referral_code, is_active=True)
+    except Group.DoesNotExist:
+        return Response({"detail": "Invalid or inactive referral code"}, status=status.HTTP_404_NOT_FOUND)
+
+    group.subscribers.add(user)
+    return Response({"detail": f"{user.name} subscribed to {group.name}"}, status=status.HTTP_200_OK)
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def my_groups(request):
     user = request.user
-    groups = Group.objects.filter(subscribers=user)
+    groups = Group.objects.filter(subscribers=user, is_active=True)
     serializer = GroupSerializer(groups, many=True)
     return Response(serializer.data)
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def public_groups(request):
-    groups = Group.objects.filter(is_public=True)
+    groups = Group.objects.filter(is_public=True, is_active=True)
     serializer = GroupSerializer(groups, many=True)
     return Response(serializer.data)
 
@@ -103,7 +128,7 @@ def public_groups(request):
 @permission_classes([IsAuthenticated])
 def private_groups(request):
     user = request.user
-    groups = Group.objects.filter(is_public=False, subscribers=user)
+    groups = Group.objects.filter(is_public=False, subscribers=user, is_active=True)
     serializer = GroupSerializer(groups, many=True)
     return Response(serializer.data)
 
@@ -115,7 +140,7 @@ def subscribe_to_group(request):
         return Response({"detail": "Missing group_id"}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
-        group = Group.objects.get(id=group_id)
+        group = Group.objects.get(id=group_id, is_active=True)
         group.subscribers.add(request.user)
         return Response({"detail": "Subscribed to group"}, status=status.HTTP_200_OK)
     except Group.DoesNotExist:
@@ -129,7 +154,7 @@ def unsubscribe_from_group(request):
         return Response({"detail": "Missing group_id"}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
-        group = Group.objects.get(id=group_id)
+        group = Group.objects.get(id=group_id, is_active=True)
         group.subscribers.remove(request.user)
         return Response({"detail": "Unsubscribed from group"}, status=status.HTTP_200_OK)
     except Group.DoesNotExist:
