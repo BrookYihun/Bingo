@@ -250,17 +250,18 @@ class GroupConsumer(WebsocketConsumer):
             return
 
         if data['type'] == "get_group_stat":
+            from game.models import Game
+            from group.models import Group
             current_game_id = self.get_group_state("current_game_id")
             is_running = self.get_game_state("is_running", current_game_id) if current_game_id else False
-
+            
+            group = Group.objects.get(id=self.group)
             stats = {}
             if is_running:
-                from game.models import Game
-                from group.models import Group
 
                 current_game = Game.objects.get(id=current_game_id)
                 current_time = timezone.now()
-                group = Group.objects.get(id=self.group)
+                
 
                 if current_game.started_at and (current_time - current_game.started_at).total_seconds() > 400 or current_game.played == "closed":
                     print(f"Game {current_game_id} expired after 400s on connect — closing...")
