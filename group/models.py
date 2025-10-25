@@ -1,6 +1,8 @@
 from django.utils import timezone
 from django.db import models
 from django.conf import settings
+import uuid
+
 def generate_referral_code(is_public: bool):
     """
     Generate a unique referral code starting at 6 digits (PU000001 / PR000001),
@@ -70,6 +72,8 @@ class Group(models.Model):
         return f"{self.name} ({'Public' if self.is_public else 'Private'})"
 
 
+
+
 class GroupGame(models.Model):
     group = models.ForeignKey(
         'Group',
@@ -88,3 +92,54 @@ class GroupGame(models.Model):
     def __str__(self):
         return f"{self.game} in {self.group.name if self.group else 'No Group'}"
 
+class GroupGroupSubscribers(models.Model):
+    group = models.ForeignKey(Group, on_delete=models.CASCADE, db_column='group_id')
+    subscriber = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        db_column='abstractuser_id',
+        related_name='group_subscriptions'
+    )
+
+
+class GroupWithdrawRequest(models.Model):
+    class PaymentStatus(models.TextChoices):
+        ACCEPTED = '0', 'Accepted'
+        PENDING = '1', 'Pending'
+        REJECTED = '2', 'Rejected'
+
+    amount = models.DecimalField(max_digits=15, decimal_places=2)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    payment_status = models.CharField(
+        max_length=1,
+        choices=PaymentStatus.choices,
+        default=PaymentStatus.PENDING
+    )
+
+    reference_id = models.CharField(max_length=50, unique=True, editable=False)
+    transaction_sms = models.TextField(blank=True, null=True)  # or CharField if short
+
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='group_withdraw_requests'
+    )
+
+    group = models.ForeignKey(
+        Group,
+        on_delete=models.CASCADE,
+        related_name='withdraw_requests'
+    )
+
+    def save(self, *args, **kwargs):
+        if not self.reference_id:
+            # Format: TXN + YYMMDD + 16-digit random number
+            timestamp = timezone.now().strftime("%y%m%d")
+            random_part = str(uuid.uuid4().int)[:16]  # Take first 16 digits of a large random int
+            self.reference_id = f"TXN{timestamp}{random_part}"
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Withdraw Request {self.reference_id} - {self.get_payment_status_display()}"

@@ -1,4 +1,6 @@
 from django.urls import path
+
+from group.views import owner_dashboard, request_group_withdrawal, withdrawal_history
 from .views import get_active_games, get_user_profile, start_game, get_game_stat, get_bingo_card, \
     get_playing_bingo_card, get_user_game_history, get_total_games_played, get_total_wins, \
     get_recent_games, get_game_participants, get_global_leaderboard, withdraw, transfer, transaction_history, \
@@ -30,4 +32,8 @@ path('recent/', get_recent_games, name='recent-games'),
     path('api/transfer/', transfer, name='transfer'),
 path('api/transaction-history/',  transaction_history, name='transaction_history'),
 path('api/transfer-history/',  transfer_history, name='transfer_history'),
+    path('dashboard/owner/', owner_dashboard, name='owner-dashboard'),
+path('withdraw-request/', request_group_withdrawal, name='group-withdraw-request'),
+    path('withdraw-history/', withdrawal_history, name='group-withdraw-history'),
+
 ]
