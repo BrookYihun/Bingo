@@ -61,3 +61,12 @@ class User(AbstractUser):
 
     def __str__(self):
         return self.name  # Or self.get_full_name() if you want full name
+    
+class RandomPlayer(models.Model):
+    on_off_stake = models.JSONField(default=dict)
+    names = models.JSONField(default=list)
+    wallet = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    number_of_players = models.IntegerField(default=0)
+
+    def __str__(self):
+        return self.names.__str__()

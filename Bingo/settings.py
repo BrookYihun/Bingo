@@ -34,6 +34,7 @@ CORS_ALLOWED_ORIGINS = [
     'http://www.dallolbingo.com',
     'https://www.dallolbingo.com',
     'http://localhost:3000',
+    'http://localhost:4200',
     'https://ntbingo.com',
     # Add other origins as needed
 ]
@@ -45,6 +46,7 @@ CSRF_TRUSTED_ORIGINS = [
     'http://www.dallolbingo.com',
     'https://www.dallolbingo.com',
     'http://localhost:3000',
+    'http://localhost:4200',
     'https://ntbingo.com',
 ]
 
