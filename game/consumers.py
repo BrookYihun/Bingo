@@ -111,28 +111,38 @@ class GameConsumer(WebsocketConsumer):
 
             if is_running:
                 from game.models import Game
-                current_game = Game.objects.get(id=current_game_id)
-                # Bonus text logic
-                stake_value = int(self.stake or 0)
-                if stake_value in [10, 20, 50] and current_game.numberofplayers >= 10:
-                    bonus_text = "10X"
-                else:
-                    bonus_text = ""
+                try:
+                    current_game = Game.objects.get(id=current_game_id)
+                    # Bonus text logic
+                    stake_value = int(self.stake or 0)
+                    if stake_value in [10, 20, 50] and current_game.numberofplayers >= 10:
+                        bonus_text = "10X"
+                    else:
+                        bonus_text = ""
 
-                stats = {
-                    "type": "game_stat",
-                    'number_of_players': current_game.numberofplayers,
-                    'stake': current_game.stake,
-                    'winner_price': float(current_game.winner_price),
-                    'bonus': bonus_text,
-                    'game_id': current_game.id,
-                    "running": True,
-                    "called_numbers": self.get_game_state("called_numbers", current_game_id) or [],
-                }
-                self.send(text_data=json.dumps({
-                    "type": "game_in_progress",
-                    "game_id": current_game_id
-                }))
+                    stats = {
+                        "type": "game_stat",
+                        'number_of_players': current_game.numberofplayers,
+                        'stake': current_game.stake,
+                        'winner_price': float(current_game.winner_price),
+                        'bonus': bonus_text,
+                        'game_id': current_game.id,
+                        "running": True,
+                        "called_numbers": self.get_game_state("called_numbers", current_game_id) or [],
+                    }
+                    self.send(text_data=json.dumps({
+                        "type": "game_in_progress",
+                        "game_id": current_game_id
+                    }))
+                except Game.DoesNotExist:
+                    self.try_start_game()
+                    stats = {
+                        "type": "game_stat",
+                        "running": False,
+                        "message": "No game is currently running.",
+                        "number_of_players": self.get_player_count(),
+                        "remaining_seconds": self.get_remaining_time(),
+                    }
             else:
                 self.try_start_game()
                 stats = {
@@ -250,24 +260,33 @@ class GameConsumer(WebsocketConsumer):
 
             if is_running:
                 from game.models import Game
-                current_game = Game.objects.get(id=current_game_id)
-                # Bonus text logic
-                stake_value = int(self.stake or 0)
-                if stake_value in [10, 20, 50] and current_game.numberofplayers >= 10:
-                    bonus_text = "10X"
-                else:
-                    bonus_text = ""
+                try:
+                    current_game = Game.objects.get(id=current_game_id)
+                    # Bonus text logic
+                    stake_value = int(self.stake or 0)
+                    if stake_value in [10, 20, 50] and current_game.numberofplayers >= 10:
+                        bonus_text = "10X"
+                    else:
+                        bonus_text = ""
 
-                stats = {
-                    "type": "game_stat",
-                    'number_of_players': current_game.numberofplayers,
-                    'stake': current_game.stake,
-                    'winner_price': float(current_game.winner_price),
-                    'bonus': bonus_text,
-                    'game_id': current_game.id,
-                    "running": True,
-                    "called_numbers": self.get_game_state("called_numbers", current_game_id) or [],
-                }
+                    stats = {
+                        "type": "game_stat",
+                        'number_of_players': current_game.numberofplayers,
+                        'stake': current_game.stake,
+                        'winner_price': float(current_game.winner_price),
+                        'bonus': bonus_text,
+                        'game_id': current_game.id,
+                        "running": True,
+                        "called_numbers": self.get_game_state("called_numbers", current_game_id) or [],
+                    }
+                except Game.DoesNotExist:
+                    stats = {
+                        "type": "game_stat",
+                        "running": False,
+                        "message": "No game is currently running.",
+                        "number_of_players": self.get_player_count(),
+                        "remaining_seconds": self.get_remaining_time(),
+                    }
             else:
                 stats = {
                     "type": "game_stat",
@@ -579,7 +598,65 @@ class GameConsumer(WebsocketConsumer):
         )
 
         self.broadcast_active_games()
+    
+    def try_adding_random_players(self):
+        from custom_auth.models import RandomPlayer
+        from decimal import Decimal
 
+        from decimal import Decimal, InvalidOperation
+
+        try:
+            # Normalize stake to a Decimal if possible
+            if self.stake is None:
+                return
+
+            try:
+                stake_value = Decimal(self.stake)
+            except (InvalidOperation, TypeError):
+                return
+
+            random_player_config = RandomPlayer.objects.get(on_off=True, stake=stake_value)
+        except RandomPlayer.DoesNotExist:
+            return
+        
+        time.sleep(3)  # Initial delay before adding random players
+
+        number_of_players = random_player_config.number_of_players
+        # Randomize number of players within range (-6 to +5)
+        number_of_players = random.randint(max(1, number_of_players - 6), number_of_players + 5)
+
+        selection = 1
+        if number_of_players >= 10:
+            selection = 2
+
+        for _ in range(number_of_players // selection):  # use integer division
+            selected_players = self.get_selected_players()
+            used_cards = set()
+            next_game_start = self.get_stake_state("next_game_start")
+            current_time = timezone.now()
+
+            if next_game_start < current_time.timestamp():
+                print("[Random Players] Game is starting soon, stopping random player addition.")
+                break
+
+            for player in selected_players:
+                used_cards.update(player['card'])
+
+            card_ids = []
+            while len(card_ids) < selection:  # each random player gets `selection` cards
+                new_card_id = random.randint(1, 120)  # Adjust range as needed
+                if new_card_id not in used_cards:
+                    card_ids.append(new_card_id)
+                    used_cards.add(new_card_id)
+
+            selected_players.append({'user': 0, 'card': card_ids})
+            self.set_selected_players(selected_players)
+            self.broadcast_player_list()
+            self.set_player_count(sum(len(p['card']) for p in selected_players))
+
+            time.sleep(2)
+
+        
     def try_start_game(self):
         from game.models import Game  # adjust this import if needed
 
@@ -633,6 +710,7 @@ class GameConsumer(WebsocketConsumer):
                 self._start_game_logic()
 
             threading.Thread(target=delayed_start, daemon=True).start()
+            threading.Thread(target=self.try_adding_random_players, daemon=True).start()
 
     def _start_game_logic(self):
         from game.models import Game
@@ -777,7 +855,7 @@ class GameConsumer(WebsocketConsumer):
         return numbers
 
     def start_game_with_random_numbers(self, game, selected_players):
-        from custom_auth.models import User
+        from custom_auth.models import User, RandomPlayer
         from decimal import Decimal
         import json
         from game.models import Game, UserGameParticipation  # ✅ Import new model
@@ -788,6 +866,8 @@ class GameConsumer(WebsocketConsumer):
 
         game.played = 'Playing'
         game.save()
+
+        random_player = RandomPlayer.objects.filter(stake=Decimal(self.stake)).first()
 
         async_to_sync(self.channel_layer.group_send)(
             self.room_group_name,
@@ -800,60 +880,82 @@ class GameConsumer(WebsocketConsumer):
 
         stake_amount = Decimal(game.stake)
         updated_player_cards = []
+        unique_entries = {}
 
         # Remove duplicate users: keep only last submitted entry per user
-        unique_entries = {entry["user"]: entry for entry in selected_players}
-        deduplicated_players = list(unique_entries.values())
+        for entry in selected_players:
+            user_id = int(entry["user"])
+            # Allow multiple entries for user 0
+            if user_id == 0:
+                # Just append separately for user 0
+                unique_entries.setdefault("zero_users", []).append(entry)
+            else:
+                # Only keep one entry per unique user
+                if user_id not in unique_entries:
+                    unique_entries[user_id] = entry
+
+        # Combine: user 0 entries + deduplicated others
+        deduplicated_players = list(unique_entries.get("zero_users", [])) + [
+            entry for key, entry in unique_entries.items() if key != "zero_users"
+        ]
 
         for entry in deduplicated_players:
             try:
-                user_id = entry["user"]
-                cards = entry["card"]
-                flat_cards = [c for sub in cards for c in sub] if isinstance(cards[0], list) else cards
-                total_deduction = stake_amount * len(flat_cards)
-                user = User.objects.get(id=user_id)
-
-                # ✅ STEP 1: Check combined balance (wallet + bonus)
-                available_balance = user.wallet + user.bonus
-                if available_balance < total_deduction:
-                    self.remove_player(user_id)
-                    continue
-
-                # ✅ STEP 2: Deduct from wallet first
-                remaining = total_deduction
-                if user.wallet >= remaining:
-                    user.wallet -= remaining
-                    remaining = Decimal('0')
+                if str(entry["user"]) == "0" or int(entry["user"]) == 0:
+                    cards = entry["card"]
+                    flat_cards = [c for sub in cards for c in sub] if isinstance(cards[0], list) else cards
+                    total_deduction = stake_amount * len(flat_cards)
+                    random_player.wallet -= total_deduction
+                    random_player.save(update_fields=['wallet'])
                 else:
-                    remaining -= user.wallet
-                    user.wallet = Decimal('0')
+                    user_id = entry["user"]
+                    cards = entry["card"]
+                    flat_cards = [c for sub in cards for c in sub] if isinstance(cards[0], list) else cards
+                    total_deduction = stake_amount * len(flat_cards)
+                    user = User.objects.get(id=user_id)
 
-                # ✅ STEP 3: Deduct remaining from bonus
-                if remaining > 0:
-                    user.bonus -= remaining
+                    # ✅ STEP 1: Check combined balance (wallet + bonus)
+                    available_balance = user.wallet + user.bonus
+                    if available_balance < total_deduction:
+                        self.remove_player(user_id)
+                        continue
 
-                # ✅ STEP 4: Record user-game participation
-                participation, created = UserGameParticipation.objects.get_or_create(
-                    user=user,
-                    game=game,
-                    defaults={'times_played': 1}
-                )
-                if not created:
-                    participation.times_played += 1
-                    participation.save(update_fields=['times_played'])
+                    # ✅ STEP 2: Deduct from wallet first
+                    remaining = total_deduction
+                    if user.wallet >= remaining:
+                        user.wallet -= remaining
+                        remaining = Decimal('0')
+                    else:
+                        remaining -= user.wallet
+                        user.wallet = Decimal('0')
 
-                # ✅ STEP 5: Update user's total games played
-                try:
-                    user.no_of_games_played = (user.no_of_games_played or 0) + 1
-                except AttributeError:
-                    print(f"User {user_id} does not have 'no_of_games_played' field, skipping increment.")
+                    # ✅ STEP 3: Deduct remaining from bonus
+                    if remaining > 0:
+                        user.bonus -= remaining
 
-                user.save()
+                    # ✅ STEP 4: Record user-game participation
+                    participation, created = UserGameParticipation.objects.get_or_create(
+                        user=user,
+                        game=game,
+                        defaults={'times_played': 1}
+                    )
+                    if not created:
+                        participation.times_played += 1
+                        participation.save(update_fields=['times_played'])
+
+                    # ✅ STEP 5: Update user's total games played
+                    try:
+                        user.no_of_games_played = (user.no_of_games_played or 0) + 1
+                    except AttributeError:
+                        print(f"User {user_id} does not have 'no_of_games_played' field, skipping increment.")
+
+                    user.save()
+
                 entry["card"] = flat_cards
                 updated_player_cards.append(entry)
 
+
             except Exception as e:
-                print(f"[Deduction or Participation Error] {e}")
                 self.remove_player(user_id)
 
         game.numberofplayers = sum(len(p['card']) for p in updated_player_cards)
@@ -918,7 +1020,11 @@ class GameConsumer(WebsocketConsumer):
                 called.append(num)
                 self.set_game_state("called_numbers", called, game.id)
 
-            time.sleep(4)
+            time.sleep(2)
+            
+            self.checkBingoforRandomPlayers(called, game.id)
+
+            time.sleep(2)
 
         game = Game.objects.get(id=game.id)
         game.played = 'closed'
@@ -931,6 +1037,107 @@ class GameConsumer(WebsocketConsumer):
         self.broadcast_player_list()
         # self.regenerate_all_cards()
         self.try_start_game()
+    
+    def checkBingoforRandomPlayers(self, calledNumbers, game_id):
+        from game.models import Card, Game
+        from custom_auth.models import RandomPlayer
+
+        game = Game.objects.get(id=int(game_id))
+        selected_players = game.playerCard
+
+        if game.winner != 0:
+            return
+
+        if game.played == 'closed':
+            return
+
+        called_numbers_list = calledNumbers + [0]
+        game.total_calls = len(called_numbers_list)
+        game.save_called_numbers(called_numbers_list)
+        game.save()
+
+        for entry in selected_players:
+            if entry['user'] == 0:  # Random Player
+                
+                player_cards = entry['card']
+                for card_id in player_cards:
+                    try:
+                        card = Card.objects.get(id=card_id)
+                    except Card.DoesNotExist:
+                        continue
+
+
+                    numbers = json.loads(card.numbers)
+                    winning_numbers = self.has_bingo(numbers, called_numbers_list)
+
+                    if winning_numbers:
+                        random_ids = [217, 72, 173, 1, 170]
+                        random_player = RandomPlayer.objects.get(stake=self.stake)
+                        result = []
+                        stake = int(self.stake)
+                        bones_amount = 0
+                        random_name = random.choice(random_player.names)
+                        random_id = random.choice(random_ids)
+                    
+                        game.played = "closed"
+                        game.winner = random_id
+                        game.winner_card = card.id
+                        game.save()
+
+                        if stake == 10 or stake == 20 or stake == 50:
+
+                            if game.numberofplayers >= 10:
+                            
+                                # Determine number of bones
+                                bones = len(called_numbers_list) 
+
+                                # Determine multiplier based on bones
+                                if bones <= 5:
+                                    multiplier = 10
+                                elif bones == 6:
+                                    multiplier = 8
+                                elif bones == 7:
+                                    multiplier = 6
+                                elif bones == 8:
+                                    multiplier = 4
+                                elif bones == 9:
+                                    multiplier = 3
+                                elif bones == 10:
+                                    multiplier = 2
+                                elif bones == 11:
+                                    multiplier = 1
+                                else:
+                                    multiplier = 0
+                            
+                                bones_amount = stake * multiplier
+
+                        result.append({
+                            'card_name': card.id,
+                            'message': 'Bingo',
+                            'name': random_name,
+                            'user_id': random_id,
+                            'card': json.loads(card.numbers),
+                            'winning_numbers': winning_numbers,
+                            'called_numbers': called_numbers_list,
+                            'bones_won': bones_amount,
+                        })
+
+                        bingo = self.get_game_state("bingo", game.id)
+                        if bingo == False:
+                            random_player.wallet += game.winner_price + bones_amount
+                            random_player.save()
+                            self.set_game_state("bingo", True, game.id)
+                            # Notify all players in the room group about the result
+                            async_to_sync(self.channel_layer.group_send)(
+                                self.room_group_name,
+                                {
+                                    'type': 'result',
+                                    'data': result,
+                                    'game_id': game.id
+                                }
+                            )
+
+                        return  # Exit once Bingo is found for any card
 
      # NEW HELPER: Update consecutive losses after game ends with a winner
     def update_consecutive_losses_after_game(self, game_id, winner_user_id):

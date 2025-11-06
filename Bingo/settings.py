@@ -36,6 +36,7 @@ CORS_ALLOWED_ORIGINS = [
     'http://localhost:3000',
     'http://localhost:4200',
     'https://ntbingo.com',
+    'http://127.0.0.1:3000',
     # Add other origins as needed
 ]
 
@@ -48,6 +49,22 @@ CSRF_TRUSTED_ORIGINS = [
     'http://localhost:3000',
     'http://localhost:4200',
     'https://ntbingo.com',
+    'http://127.0.0.1:3000',
+]
+
+
+CORS_ALLOW_CREDENTIALS = True
+
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
 ]
 
 # Application definition
@@ -120,14 +137,15 @@ WSGI_APPLICATION = 'Bingo.wsgi.application'
 #         'PORT': '5433',  # Leave empty if default port 5432 is used           # Leave empty if default port 5432 is used
 #     }
 # }
-DATABASES={
-    'default':{
+DATABASES = {
+    'default': {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': 'dallol_bingo_online',
         'USER': 'dallol',
         'PASSWORD': 'Byihun@123',
-        'HOST': 'localhost',  # Typically localhost for shared hosting
+        'HOST': 'localhost',
         'PORT': '5432',
+        'CONN_MAX_AGE': 60,  # keep connection open for 60 seconds max
     }
 }
 # DATABASES={
