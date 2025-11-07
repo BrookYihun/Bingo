@@ -8,7 +8,7 @@ import requests
 from django.core.cache import cache
 from django.db import models
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Count, Q, Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -333,78 +333,92 @@ def get_game_participants(request, game_id):
 @permission_classes([IsAuthenticated])
 def get_global_leaderboard(request):
     now = timezone.now()
-    # First day of the current month
-    start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    current_user = request.user
 
+    # --- Stake filter ---
     stake_param = request.GET.get('stake', '10')
     if stake_param not in ['10', '20', '50', '100']:
         return Response({"error": "Invalid stake."}, status=400)
     selected_stake = stake_param
 
-    current_user = request.user
-
-    # Count unique games participated in this month, filtered by stake
-    annotated_users = (
-        User.objects
-        .annotate(
-            total_games=Count(
-                'game_participation__game',
-                filter=Q(game_participation__created_at__gte=start_of_month) &
-                       Q(game_participation__game__stake=selected_stake),
-                distinct=True  # count unique games only
+    def build_leaderboard(start_date, end_date, label):
+        """Reusable helper to build leaderboard for a given period."""
+        annotated_users = (
+            User.objects
+            .annotate(
+                total_games=Sum(
+                    'game_participation__times_played',
+                    filter=Q(game_participation__created_at__gte=start_date)
+                           & Q(game_participation__created_at__lte=end_date)
+                           & Q(game_participation__game__stake=selected_stake),
+                )
             )
+            .filter(total_games__gt=0)
+            .order_by('-total_games', 'id')
         )
-        .filter(total_games__gt=0)
-        .order_by('-total_games', 'id')
-    )
 
-    all_users_with_rank = list(annotated_users.values('id', 'total_games'))
-
-    # Map user ID to rank and total games
-    user_rank_map = {item['id']: {'rank': index + 1, 'total_games_played': item['total_games']}
-                     for index, item in enumerate(all_users_with_rank)}
-
-    # Current user's rank
-    your_data = user_rank_map.get(current_user.id)
-    if your_data:
-        your_rank_info = {
-            "rank": your_data['rank'],
-            "user_id": current_user.id,
-            "name": current_user.name,
-            "phone_number": current_user.phone_number,
-            "total_games_played": your_data['total_games_played']
-        }
-    else:
-        your_rank_info = {
-            "rank": None,
-            "user_id": current_user.id,
-            "name": current_user.name,
-            "phone_number": current_user.phone_number,
-            "total_games_played": 0
+        # Build rank map
+        all_users_with_rank = list(annotated_users.values('id', 'total_games'))
+        user_rank_map = {
+            item['id']: {'rank': index + 1, 'total_games_played': item['total_games']}
+            for index, item in enumerate(all_users_with_rank)
         }
 
-    # Top 10 leaderboard
-    leaderboard = []
-    for user in annotated_users[:10]:
-        leaderboard.append({
-            "rank": user_rank_map[user.id]['rank'],
-            "user_id": user.id,
-            "name": user.name,
-            "phone_number": user.phone_number,
-            "total_games_played": user.total_games,
-        })
+        # Current user's data
+        your_data = user_rank_map.get(current_user.id)
+        if your_data:
+            your_rank_info = {
+                "rank": your_data['rank'],
+                "user_id": current_user.id,
+                "name": current_user.name,
+                "phone_number": current_user.phone_number,
+                "total_games_played": your_data['total_games_played']
+            }
+        else:
+            your_rank_info = {
+                "rank": None,
+                "user_id": current_user.id,
+                "name": current_user.name,
+                "phone_number": current_user.phone_number,
+                "total_games_played": 0
+            }
+
+        # Top 10 players
+        leaderboard = [
+            {
+                "rank": user_rank_map[user.id]['rank'],
+                "user_id": user.id,
+                "name": user.name,
+                "phone_number": user.phone_number,
+                "total_games_played": user.total_games,
+            }
+            for user in annotated_users[:10]
+        ]
+
+        return {
+            "label": label,
+            "leaderboard": leaderboard,
+            "your_rank": your_rank_info,
+            "total_users_ranked": len(user_rank_map),
+            "from_date": start_date.date().isoformat(),
+            "to_date": end_date.date().isoformat(),
+        }
+
+    # --- Daily leaderboard ---
+    start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    daily_data = build_leaderboard(start_of_day, now, "daily")
+
+    # --- Weekly leaderboard ---
+    start_of_week = now - timedelta(days=now.weekday())  # Monday start
+    start_of_week = start_of_week.replace(hour=0, minute=0, second=0, microsecond=0)
+    weekly_data = build_leaderboard(start_of_week, now, "weekly")
 
     return Response({
-        "leaderboard": leaderboard,
-        "your_rank": your_rank_info,
-        "total_users_ranked": len(user_rank_map),
-        "period": "current_month",
-        "from_date": start_of_month.date().isoformat(),
-        "to_date": now.date().isoformat(),
+        "daily_leaderboard": daily_data,
+        "weekly_leaderboard": weekly_data,
         "filtered_by": {"stake": selected_stake},
         "available_filters": {"stake": ["10", "20", "50", "100"]}
     })
-
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])

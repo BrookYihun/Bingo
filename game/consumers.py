@@ -623,7 +623,7 @@ class GameConsumer(WebsocketConsumer):
 
         number_of_players = random_player_config.number_of_players
         # Randomize number of players within range (-6 to +5)
-        number_of_players = random.randint(max(1, number_of_players - 6), number_of_players + 5)
+        number_of_players = random.randint(max(1, number_of_players - 3), number_of_players + 2)
 
         selection = 1
         if number_of_players >= 10:
@@ -937,10 +937,10 @@ class GameConsumer(WebsocketConsumer):
                     participation, created = UserGameParticipation.objects.get_or_create(
                         user=user,
                         game=game,
-                        defaults={'times_played': 1}
+                        defaults={'times_played': len(flat_cards)}
                     )
                     if not created:
-                        participation.times_played += 1
+                        participation.times_played = len(flat_cards)
                         participation.save(update_fields=['times_played'])
 
                     # ✅ STEP 5: Update user's total games played
@@ -1262,6 +1262,8 @@ class GameConsumer(WebsocketConsumer):
                     
                         # Determine number of bones
                         bones = len(called_numbers_list) 
+
+                        print(f"User {user_id} achieved Bingo with {bones} bones.")
 
                         # Determine multiplier based on bones
                         if bones <= 5:
