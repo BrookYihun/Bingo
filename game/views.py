@@ -408,9 +408,12 @@ def get_global_leaderboard(request):
     start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
     daily_data = build_leaderboard(start_of_day, now, "daily")
 
-    # --- Weekly leaderboard ---
-    start_of_week = now - timedelta(days=now.weekday())  # Monday start
+    # --- Weekly leaderboard (Sunday 00:00 → Saturday 23:59:59) ---
+    # Python weekday: Monday=0 ... Saturday=5, Sunday=6
+    days_since_sunday = (now.weekday() - 6) % 7
+    start_of_week = now - timedelta(days=days_since_sunday)
     start_of_week = start_of_week.replace(hour=0, minute=0, second=0, microsecond=0)
+    
     weekly_data = build_leaderboard(start_of_week, now, "weekly")
 
     return Response({
