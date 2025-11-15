@@ -76,17 +76,10 @@ class GameConsumer(WebsocketConsumer):
         # Only regenerate cards NOT in active games
         cards_to_regen = Card.objects.exclude(id__in=active_cards)
         total = cards_to_regen.count()
-        print(f"[Regen] 🔄 Regenerating {total} cards (excluding active game cards)...")
     
         existing_cards = set()
         for i, card in enumerate(cards_to_regen, 1):
             self.regenerate_card_numbers(card, existing_cards)
-            if i % 100 == 0:
-                print(f"[Regen] {i}/{total} cards regenerated...")
-    
-        print(f"[Regen] ✅ All {total} non-active cards regenerated successfully.")
-    
-
 
     def connect(self):
         self.stake = self.scope['url_route']['kwargs']['stake']
@@ -232,7 +225,6 @@ class GameConsumer(WebsocketConsumer):
                     break
 
             if not user_cards:
-                print("No cards found for user, skipping response.")
                 self.send(text_data=json.dumps({
                     "type": "no_cards",
                     "message": "No cards found for user."
@@ -247,7 +239,6 @@ class GameConsumer(WebsocketConsumer):
                 }
                 for card in cards
             ]
-            print("Sending cards:", bingo_table_data)
             self.send(text_data=json.dumps({
                 "type": "card_data",
                 "cards": bingo_table_data
@@ -636,7 +627,6 @@ class GameConsumer(WebsocketConsumer):
             current_time = timezone.now()
 
             if next_game_start < current_time.timestamp():
-                print("[Random Players] Game is starting soon, stopping random player addition.")
                 break
 
             for player in selected_players:
@@ -672,7 +662,6 @@ class GameConsumer(WebsocketConsumer):
                 current_game = Game.objects.get(id=current_game_id)
                 if current_game.started_at and (current_time - current_game.started_at).total_seconds() > 400:
                     # Game expired
-                    print(f"Game {current_game_id} has expired (400s). Closing and resetting...")
                     current_game.played = "closed"  # assuming status is a string field
                     current_game.save(update_fields=["status"])
                     self.set_game_state("is_running", False, current_game_id)
@@ -741,7 +730,6 @@ class GameConsumer(WebsocketConsumer):
             played='Started'
         )
         new_game.save()
-        print(f"New game created with ID: {new_game.id}")
 
         self.set_game_state("is_running", True, game_id=new_game.id)
         self.set_stake_state("current_game_id", new_game.id)
@@ -1170,8 +1158,6 @@ class GameConsumer(WebsocketConsumer):
                         else:
                             user.save(update_fields=['consecutive_losses'])
             
-                    print(
-                        f"[LOSS TRACK] User {user_id}: consecutive_losses = {user.consecutive_losses}, bonus = {user.bonus}")
                 except User.DoesNotExist:
                     continue
 
@@ -1183,7 +1169,6 @@ class GameConsumer(WebsocketConsumer):
         result = []
 
         # Retrieve player's cards based on the provided user_id
-        print(game.playerCard)
         selected_players = game.playerCard
         players = selected_players
         player_cards = [entry['card'] for entry in players if int(entry['user']) == int(user_id)]
@@ -1207,8 +1192,6 @@ class GameConsumer(WebsocketConsumer):
                     yield item
 
         user_cards = list(flatten(player_cards))
-
-        print(f"Checking Bingo for user {user_id} with cards: {user_cards}")
 
         if game.winner != 0:
             return
@@ -1239,12 +1222,9 @@ class GameConsumer(WebsocketConsumer):
         # Fetch the Card objects
         cards = Card.objects.filter(id__in=user_cards)
 
-        print(f"Cards for user {user_id}: {[card.id for card in cards]}")
-
         # Loop through all the cards assigned to the user
         for card in cards:
             numbers = json.loads(card.numbers)
-            print(f"Checking card {card.id} for user {user_id} with numbers: {numbers}")
             # Check if this card has a Bingo with the called numbers
             winning_numbers = self.has_bingo(numbers, called_numbers_list)
 
@@ -1262,8 +1242,6 @@ class GameConsumer(WebsocketConsumer):
                     
                         # Determine number of bones
                         bones = len(called_numbers_list) 
-
-                        print(f"User {user_id} achieved Bingo with {bones} bones.")
 
                         # Determine multiplier based on bones
                         if bones <= 5:
@@ -1284,6 +1262,7 @@ class GameConsumer(WebsocketConsumer):
                             multiplier = 0
                     
                         bones_amount = stake * multiplier
+                    print("Bones Amount Won: ", bones_amount)
                 self.update_consecutive_losses_after_game(game_id, user_id)
                 # Bingo achieved
                 result.append({
@@ -1337,9 +1316,6 @@ class GameConsumer(WebsocketConsumer):
         winning_columns = 0
         corner_count = 0
         winning_numbers = []
-
-        print("Checking card for Bingo:", card)
-        print("Called numbers:", called_numbers)
 
         # Check diagonals
         diagonal2 = [card[i][i] for i in range(len(card))]
@@ -1428,7 +1404,6 @@ class GameConsumer(WebsocketConsumer):
         }))
 
     def game_started(self, event):
-        print("🎯 [WS] game_started called:", event)
         self.send(text_data=json.dumps({
             'type': 'game_started',
             'game_id': event['game_id'],

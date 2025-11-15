@@ -970,7 +970,6 @@ def withdraw(request):
 
     try:
         response = requests.post(BOT_API_URL, json=payload, timeout=15)
-        print(f"[Bot API] Status: {response.status_code}, Response: {response.text[:500]}")
 
         if 200 <= response.status_code < 300:
             bot_sent = True
@@ -978,10 +977,8 @@ def withdraw(request):
             bot_error_msg = f"Unexpected status {response.status_code}: {response.text[:300]}"
     except requests.exceptions.RequestException as e:
         bot_error_msg = f"Request failed: {str(e)}"
-        print(f"[Bot API] Failed to connect: {e}")
     except Exception as e:
         bot_error_msg = f"Unknown error: {str(e)}"
-        print(f"[Bot API] Unexpected error: {e}")
 
     if not bot_sent:
         print(f"[Warning] Could not deliver to agent bot: {bot_error_msg}")
