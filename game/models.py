@@ -26,6 +26,7 @@ class Game(models.Model):
     bonus = models.IntegerField(default=0)
     winner = models.IntegerField(default=0)
     winner_card=models.IntegerField(default=0)
+    winner_name=models.CharField(max_length=255,default='')
 
     def __str__(self) -> str:
         return f"Game number {self.id}"

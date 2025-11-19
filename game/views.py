@@ -434,8 +434,10 @@ def get_recent_games(request):
         winner_name = "No winner"
         if game.winner:
             try:
-                winner_user = User.objects.get(id=game.winner)
-                winner_name = winner_user.name
+                winner_name = game.winner_name
+                if not winner_name:
+                    winner_user = User.objects.get(id=game.winner)
+                    winner_name = winner_user.name
             except User.DoesNotExist:
                 winner_name = "Unknown"
         recent.append({

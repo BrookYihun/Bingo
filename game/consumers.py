@@ -1070,6 +1070,7 @@ class GameConsumer(WebsocketConsumer):
                         game.played = "closed"
                         game.winner = random_id
                         game.winner_card = card.id
+                        game.winner_name = random_name
                         game.save()
 
                         if stake == 10 or stake == 20 or stake == 50:
@@ -1281,6 +1282,7 @@ class GameConsumer(WebsocketConsumer):
                 game.winner = user_id
                 game.winner_card=card.id
                 game.bonus = bones_amount
+                game.winner_name = acc.name
                 game.save()
 
                 # Notify all players in the room group about the result
