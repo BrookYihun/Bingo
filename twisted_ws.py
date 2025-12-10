@@ -52,9 +52,9 @@ class BingoWSProtocol(WebSocketServerProtocol):
 
     def onOpen(self):
         # Start Redis Pub/Sub listener
+        ch = f"game:{self.stake}:incoming"
         self.pubsub = self._redis.pubsub()
         channel = f"game:{self.stake}:events"
-        ch = f"game:{self.stake}:incoming"
         self.pubsub.subscribe(channel)
         print(f"Subscribed to Redis channel: {channel}")
         threading.Thread(target=self.listen_to_redis, daemon=True).start()
