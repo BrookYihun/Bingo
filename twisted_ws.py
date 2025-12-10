@@ -202,25 +202,24 @@ class BingoWSProtocol(WebSocketServerProtocol):
             self.sendMessage(msg.encode('utf-8'), isBinary=False)
 
     def connectionLost(self, reason):
-        # stop pubsub
-        self._stop_pubsub.set()
-        try:
-            self.pubsub.close()
-        except Exception:
-            pass
+        if hasattr(self, "_stop_pubsub"):
+            self._stop_pubsub.set()
 
-        # --- unregister this client ---
+        if hasattr(self, "pubsub"):
+            try:
+                self.pubsub.close()
+            except Exception:
+                pass
+
         try:
             clients = connected_clients.get(self.room_name)
             if clients and self in clients:
                 clients.remove(self)
                 if not clients:
-                    # keep the dict clean
                     connected_clients.pop(self.room_name, None)
                 print(f"Client unregistered: {self.client_id} from {self.room_name}")
         except Exception as e:
             print("Error unregistering client:", e)
-        # ---------------------------------------------------
 
         super().connectionLost(reason)
 
