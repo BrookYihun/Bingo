@@ -142,7 +142,7 @@ class BingoWSProtocol(WebSocketServerProtocol):
             # Send current selected player list
             self.send_ws_message(json.dumps({
                 "type": "player_list",
-                "player_list": self.get_selected_players()
+                "player_list": redis_state.get_selected_players()
             }))
 
 
