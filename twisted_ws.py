@@ -54,6 +54,7 @@ class BingoWSProtocol(WebSocketServerProtocol):
         # Start Redis Pub/Sub listener
         self.pubsub = self._redis.pubsub()
         channel = f"game:{self.stake}:events"
+        ch = f"game:{self.stake}:incoming"
         self.pubsub.subscribe(channel)
         print(f"Subscribed to Redis channel: {channel}")
         threading.Thread(target=self.listen_to_redis, daemon=True).start()
@@ -211,15 +212,17 @@ class BingoWSProtocol(WebSocketServerProtocol):
             except Exception:
                 pass
 
+        # --- unregister this client ---
         try:
-            clients = connected_clients.get(self.room_name)
+            clients = connected_clients.get(getattr(self, "room_name", None))
             if clients and self in clients:
                 clients.remove(self)
                 if not clients:
                     connected_clients.pop(self.room_name, None)
-                print(f"Client unregistered: {self.client_id} from {self.room_name}")
+                print(f"Client unregistered: {getattr(self,'client_id',None)} from {getattr(self,'room_name',None)}")
         except Exception as e:
             print("Error unregistering client:", e)
+        # ---------------------------------------------------
 
         super().connectionLost(reason)
 
