@@ -25,7 +25,7 @@ REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.environ.get("REDIS_PORT", 6379))
 
 connected_clients = {}  # room_name -> set of WebSocket instances
-ch = None
+
 def extract_stake_from_path(path_bytes):
     try:
         path = path_bytes.decode() if isinstance(path_bytes, (bytes, bytearray)) else str(path_bytes)
@@ -49,10 +49,10 @@ class BingoWSProtocol(WebSocketServerProtocol):
         self.room_name = f"game_{self.stake}" if self.stake else "game_unknown"
         self.client_id = f"{self.peer}-{id(self)}"
         self._stop_pubsub = threading.Event()
+        self.channel_incoming = f"game:{self.stake}:incoming"  # <-- define here
 
     def onOpen(self):
         # Start Redis Pub/Sub listener
-        ch = f"game:{self.stake}:incoming"
         self.pubsub = self._redis.pubsub()
         channel = f"game:{self.stake}:events"
         self.pubsub.subscribe(channel)
@@ -109,8 +109,7 @@ class BingoWSProtocol(WebSocketServerProtocol):
                         "game_id": current_game_id
                     }))
                 except Game.DoesNotExist:
-                    ch = f"game:{self.stake}:incoming"
-                    self._redis.publish(ch, json.dumps({
+                    self._redis.publish(self.channel_incoming, json.dumps({
                         "client_id": self.client_id,
                         "remote": str(self.peer),
                         "room_name": self.room_name,
@@ -124,7 +123,7 @@ class BingoWSProtocol(WebSocketServerProtocol):
                         "remaining_seconds": redis_state.get_remaining_time(),
                     }
             else:
-                self._redis.publish(ch, json.dumps({
+                self._redis.publish(self.channel_incoming, json.dumps({
                         "client_id": self.client_id,
                         "remote": str(self.peer),
                         "room_name": self.room_name,
@@ -246,8 +245,7 @@ class BingoWSProtocol(WebSocketServerProtocol):
         }
 
         try:
-            ch = f"game:{self.stake}:incoming"
-            self._redis.publish(ch, json.dumps(outgoing))
+            self._redis.publish(self.channel_incoming, json.dumps(outgoing))
         except Exception as e:
             print("Failed to publish to Redis incoming:", e)
             self.send_ws_message(json.dumps({"type": "error", "message": "publish_failed"}))
