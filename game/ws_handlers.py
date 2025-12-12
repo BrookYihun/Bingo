@@ -1153,8 +1153,8 @@ class GameManager:
                 called.append(num)
                 self.redis_state.set_game_state("called_numbers", called, game.id)
 
-            time.sleep(4)
-            self.check_bingo_for_random_players(called, game.id)
+            time.sleep(2)
+            self.check_bingo_for_random_players(called, game)
             time.sleep(2)
 
         # Close game
