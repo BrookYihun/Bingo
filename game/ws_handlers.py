@@ -751,11 +751,11 @@ class GameManager:
         user_id = payload.get("userId")
 
         if not is_running or not current_game_id:
-            async_to_sync(self.channel_layer.group_send)(
-                self.room_group_name,
-                {"type": "error", "message": "No active game to check bingo."}
+             publish_event(
+                stake=self.stake,
+                event={"type": "error", "message": "No active game to check bingo."},
+                target_client_id=self.client_id,
             )
-            return
 
         called_numbers = self.redis_state.get_game_state("called_numbers", current_game_id) or []
         self.checkBingo(user_id, called_numbers, current_game_id)
