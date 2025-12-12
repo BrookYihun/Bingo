@@ -762,8 +762,10 @@ class GameManager:
         self.checkBingo(user_id, called_numbers, current_game_id)
 
     def checkBingo(self, user_id, called_numbers, game_id):
+        import json
         from game.models import Card, Game
         from custom_auth.models import User
+
         result = []
 
         try:
@@ -787,12 +789,12 @@ class GameManager:
             result.append({'user_id': user_id, 'message': 'Not a Player'})
             publish_event(
                 stake=self.stake,
-                event={"type": "result", "data": result,'game_id': game.id,},
+                event={"type": "result", "data": result, 'game_id': game.id},
                 target_client_id=self.client_id,
             )
             return
 
-        # --- Already closed ---
+        # --- Check if game already has a winner ---
         if game.played == "closed" or game.winner:
             return
 
@@ -800,7 +802,6 @@ class GameManager:
         called_numbers = list(set(called_numbers + [0]))
         game.total_calls = len(called_numbers)
         game.save_called_numbers(called_numbers)
-        game.save(update_fields=["total_calls"])
 
         # --- Flatten cards ---
         def flatten(lst):
@@ -815,6 +816,8 @@ class GameManager:
 
         user = User.objects.get(id=user_id)
 
+        bingo_found = False
+
         for card in cards:
             numbers = json.loads(card.numbers)
             winning_numbers = self.has_bingo(numbers, called_numbers)
@@ -822,10 +825,9 @@ class GameManager:
             if not winning_numbers:
                 continue
 
-            # ✅ BONES CALCULATION
+            # --- Calculate bones if applicable ---
             bones_amount = 0
             stake = int(game.stake)
-
             if stake in (10, 20, 50) and game.numberofplayers >= 10:
                 bones = len(called_numbers)
                 multiplier_map = {
@@ -835,52 +837,59 @@ class GameManager:
                 }
                 bones_amount = stake * multiplier_map.get(bones, 0)
 
+            # --- Update game winner fields ---
             game.winner = user.id
             game.winner_card = card.id
             game.winner_name = user.name
             game.played = "closed"
             game.total_calls = len(called_numbers)
-            game.save()
+            game.bonus = bones_amount
 
-            # ✅ Pay user (once)
+            # Save all winner fields explicitly
+            game.save(update_fields=["winner", "winner_card", "winner_name", "played", "total_calls", "bonus"])
+
+            # --- Pay user once ---
             if not self.redis_state.get_game_state("bingo", game.id):
                 user.wallet += game.winner_price + bones_amount
                 user.save()
                 self.redis_state.set_game_state("bingo", True, game.id)
-            
+
             result.append({
-                 "card_name": card.id,
+                "card_name": card.id,
                 "message": "Bingo",
                 "name": user.name,
                 "user_id": user.id,
                 "card": json.loads(card.numbers),
                 "winning_numbers": winning_numbers,
-                "called_numbers":  called_numbers,
+                "called_numbers": called_numbers,
                 "bones_won": bones_amount
             })
 
-            # ✅ BROADCAST RESULT TO ALL USERS
-            publish_event(
-                stake=self.stake,
-                event={
-                "type": "result",
-                "data": result,
-                "game_id": game.id
-                },
-            )
-            return
+            bingo_found = True
+            break  # stop checking after first winning card
 
-        # ❌ No bingo (only reply to requester)
-        result.append({'user_id': user_id, 'message': 'No Bingo'})
+        # --- Broadcast result ---
         publish_event(
             stake=self.stake,
             event={
                 "type": "result",
                 "data": result,
-                'game_id': game.id,
+                "game_id": game.id
             },
-            target_client_id=self.client_id,
+            target_client_id=None if bingo_found else self.client_id
         )
+
+        if not bingo_found:
+            # No bingo for this user
+            publish_event(
+                stake=self.stake,
+                event={
+                    "type": "result",
+                    "data": [{'user_id': user_id, 'message': 'No Bingo'}],
+                    "game_id": game.id
+                },
+                target_client_id=self.client_id
+            )
 
 
     def has_bingo(self, card, called_numbers):
