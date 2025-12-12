@@ -727,9 +727,7 @@ class GameManager:
         result = []
 
         try:
-            game = self.redis_state.get_game_data(game_id)
-            if not game:
-                game = Game.objects.get(id=int(game_id))
+            game = Game.objects.get(id=int(game_id))
         except Game.DoesNotExist:
             publish_event(
                 stake=self.stake,
