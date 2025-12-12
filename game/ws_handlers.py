@@ -1268,7 +1268,7 @@ class GameManager:
 
             # ------------ END GAME ------------
             game.played = "closed"
-            game.save()
+            game.save(update_fields=["played"])
             self.redis_state.set_game_state("is_running", False, game.id)
 
             self.redis_state.set_selected_players([])
