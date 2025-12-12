@@ -1021,34 +1021,28 @@ class GameManager:
         from decimal import Decimal
         from custom_auth.models import RandomPlayer, User
 
-        # Redis client (adjust to your RedisState attribute)
+        # --- Redis client ---
         redis_client = getattr(self.redis_state, "redis_client", None)
         if redis_client is None:
-            # fallback if different attr name
             redis_client = getattr(self.redis_state, "redis", None)
-
         if redis_client is None:
-            print("⚠️ Redis client not available on redis_state; aborting start_game_with_random_numbers")
+            print("⚠️ Redis client not available — aborting start_game_with_random_numbers")
             return
 
-        lock_key = f"game:{game.id}:lock"
-        lock_ttl_seconds = 600  # time to auto-expire the lock (adjust as needed)
-
-        # Unique token for this process so we can safely release the lock only if we own it
+        # --- Distributed lock ---
+        lock_key = f"game:{game.id}:broadcast_lock"
+        lock_ttl = 10  # lock expires every 10 seconds unless renewed
         lock_token = str(uuid.uuid4())
 
         try:
-            # Try to acquire lock atomically (SET key token NX EX ttl)
-            acquired = redis_client.set(lock_key, lock_token, nx=True, ex=lock_ttl_seconds)
+            acquired = redis_client.set(lock_key, lock_token, nx=True, ex=lock_ttl)
             if not acquired:
-                # Another process has the lock; don't run the loop here
-                print(f"🔒 Lock exists for game {game.id}, skipping start_game_with_random_numbers in this process")
+                print(f"🔒 Another worker already broadcasting for game {game.id}. Exiting.")
                 return
 
-            # We have the lock — proceed
-            print(f"✅ Acquired lock {lock_key} token={lock_token} — starting random numbers for game {game.id}")
+            print(f"✅ Acquired broadcast lock for game {game.id} token={lock_token}")
 
-            # mark game as running in redis-state
+            # mark running
             self.game_id = game.id
             self.redis_state.set_game_state("is_running", True, game.id)
             self.redis_state.set_game_state("bingo", False, game.id)
@@ -1056,10 +1050,10 @@ class GameManager:
             game.played = "Playing"
             game.save()
 
-            # If you use RandomPlayer/User logic:
+            # random player
             random_player = RandomPlayer.objects.filter(stake=Decimal(self.stake)).first()
 
-            # Broadcast 'playing' (use publish_event helper)
+            # broadcast "playing"
             publish_event(
                 stake=self.stake,
                 event={
@@ -1069,50 +1063,52 @@ class GameManager:
                 }
             )
 
+            # ------- Remove duplicates + charge money -------
             stake_amount = Decimal(game.stake)
             updated_player_cards = []
             unique_entries = {}
 
-            # Deduplicate players (keep last per user except user 0)
             for entry in selected_players:
                 user_id = int(entry.get("user", 0))
                 if user_id == 0:
                     unique_entries.setdefault("zero_users", []).append(entry)
                 else:
-                    if user_id not in unique_entries:
-                        unique_entries[user_id] = entry
+                    unique_entries[user_id] = entry
 
-            deduplicated_players = list(unique_entries.get("zero_users", [])) + [
+            dedup_players = list(unique_entries.get("zero_users", [])) + [
                 entry for k, entry in unique_entries.items() if k != "zero_users"
             ]
 
-            # Deduct money and prepare player cards
-            for entry in deduplicated_players:
+            for entry in dedup_players:
                 try:
                     user_id = entry["user"]
                     cards = entry["card"]
-                    # flatten if nested lists (safe fallback)
-                    flat_cards = [c for sub in cards for c in sub] if cards and isinstance(cards[0], list) else cards
-                    total_deduction = stake_amount * len(flat_cards)
+
+                    # flatten cards if nested
+                    flat_cards = (
+                        [c for sub in cards for c in sub]
+                        if cards and isinstance(cards[0], list)
+                        else cards
+                    )
+
+                    total_ded = stake_amount * len(flat_cards)
 
                     if int(user_id) == 0:
                         if random_player:
-                            random_player.wallet -= total_deduction
+                            random_player.wallet -= total_ded
                             random_player.save(update_fields=['wallet'])
                     else:
                         try:
                             user = User.objects.get(id=user_id)
                         except User.DoesNotExist:
-                            # skip if user not found
                             continue
 
-                        if (user.wallet + user.bonus) < total_deduction:
-                            # remove player if insufficient
+                        if (user.wallet + user.bonus) < total_ded:
                             self.remove_player(user_id)
                             continue
 
-                        # Deduct wallet first, then bonus
-                        remaining = total_deduction
+                        remaining = total_ded
+
                         if user.wallet >= remaining:
                             user.wallet -= remaining
                             remaining = Decimal('0')
@@ -1123,44 +1119,44 @@ class GameManager:
                         if remaining > 0:
                             user.bonus -= remaining
 
-                        # update games played counter if exists
                         try:
                             user.no_of_games_played = (user.no_of_games_played or 0) + 1
-                        except AttributeError:
+                        except:
                             pass
+
                         user.save()
 
                     entry["card"] = flat_cards
                     updated_player_cards.append(entry)
+
                 except Exception as e:
-                    print("Error processing entry during start_game_with_random_numbers:", e)
+                    print("Error processing entry:", e)
                     try:
                         self.remove_player(user_id)
-                    except Exception:
+                    except:
                         pass
 
-            # Update game model
-            game.numberofplayers = sum(len(p['card']) for p in updated_player_cards)
+            # update game model
+            game.numberofplayers = sum(len(p["card"]) for p in updated_player_cards)
             game.playerCard = updated_player_cards
+
             winner_price = stake_amount * game.numberofplayers
 
             if winner_price >= 100:
                 admin_cut = winner_price * Decimal('0.2')
                 winner_price -= admin_cut
-                game.admin_cut = admin_cut
             elif 50 <= winner_price < 100:
                 admin_cut = winner_price * Decimal('0.1')
                 winner_price -= admin_cut
-                game.admin_cut = admin_cut
             else:
-                game.admin_cut = Decimal('0')
+                admin_cut = Decimal('0')
 
+            game.admin_cut = admin_cut
             game.winner_price = winner_price
             game.save()
 
             bonus_text = "10X" if int(self.stake or 0) in [10, 20, 50] and game.numberofplayers >= 10 else ""
 
-            # Broadcast game stat once
             publish_event(
                 stake=self.stake,
                 event={
@@ -1174,25 +1170,32 @@ class GameManager:
                 }
             )
 
-            # small initial delay before starting numbers
             time.sleep(5)
 
-            # MAIN LOOP: broadcast random numbers
+            # ------------ MAIN NUMBER LOOP ------------
             random_numbers = json.loads(game.random_numbers)
+
             for num in random_numbers:
-                # re-check flags from redis to allow an external stop
-                is_running = self.redis_state.get_game_state("is_running", game.id)
-                bingo = self.redis_state.get_game_state("bingo", game.id)
-                if not is_running or bingo:
+
+                # renew lock (HEARTBEAT)
+                current = redis_client.get(lock_key)
+                if current != lock_token:
+                    print(f"❌ Lost lock for game {game.id}. Stopping loop.")
+                    return
+
+                redis_client.expire(lock_key, lock_ttl)
+
+                # stop if bingo or stopped externally
+                if not self.redis_state.get_game_state("is_running", game.id):
                     break
 
-                # OPTIONAL: prevent duplicate sends for the same number by storing last sent number
+                if self.redis_state.get_game_state("bingo", game.id):
+                    break
+
                 last_sent = self.redis_state.get_game_state("last_sent_number", game.id)
                 if last_sent == num:
-                    # already sent by someone else — skip
                     continue
 
-                # send the number to all clients
                 publish_event(
                     stake=self.stake,
                     event={
@@ -1202,42 +1205,40 @@ class GameManager:
                     }
                 )
 
-                # mark called numbers and last_sent atomically in redis state
+                # save state
                 called = self.redis_state.get_game_state("called_numbers", game.id) or []
                 if not isinstance(called, list):
                     called = []
                 called.append(num)
+
                 self.redis_state.set_game_state("called_numbers", called, game.id)
                 self.redis_state.set_game_state("last_sent_number", num, game.id)
 
-                # run checks for random players bingo
+                # check random players
                 try:
                     self.check_bingo_for_random_players(called, game)
                 except Exception as e:
-                    print("Error in check_bingo_for_random_players:", e)
+                    print("check_bingo_for_random_players error:", e)
 
-                time.sleep(2)  # pacing between numbers
+                time.sleep(2)
 
-            # end game cleanup
-            game.played = 'closed'
+            # ------------ END GAME ------------
+            game.played = "closed"
             game.save()
             self.redis_state.set_game_state("is_running", False, game.id)
 
-            # Reset selection
             self.redis_state.set_selected_players([])
             self.redis_state.set_player_count(0)
-            # broadcast player list (you may want a publish_event instead)
             self.redis_state.broadcast_player_list()
 
-            # try to schedule next game
             self.try_start_game()
 
         except Exception as e:
-            print("🚨 Error in start_game_with_random_numbers:", e)
+            print("🚨 start_game_with_random_numbers error:", e)
+
         finally:
-            # release lock safely only if we still own it
+            # safe unlock with Lua
             try:
-                # Lua script: if redis.get(key) == token then del key end
                 release_script = """
                 if redis.call("GET", KEYS[1]) == ARGV[1] then
                     return redis.call("DEL", KEYS[1])
@@ -1246,6 +1247,6 @@ class GameManager:
                 end
                 """
                 redis_client.eval(release_script, 1, lock_key, lock_token)
-                print(f"🔓 Released lock {lock_key} token={lock_token}")
+                print(f"🔓 Released lock {lock_key}")
             except Exception as e:
-                print("⚠️ Failed to release lock (ignored):", e)
+                print("⚠️ Failed releasing lock:", e)
