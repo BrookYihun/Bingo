@@ -102,7 +102,7 @@ def process_message(msg):
 
     # --- Fetch active games ---
     elif msg_type == "fetch_active_game":
-        active_games = manager.get_all_active_games()
+        active_games = manager.redis_state.get_all_active_games()
         publish_event(stake, {"type": "active_game_data", "data": active_games})
     
     elif msg_type == "request_game_start":
