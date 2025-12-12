@@ -27,12 +27,12 @@ def publish_event(stake, event, target_client_id=None):
     Publish an event to Redis.
     If target_client_id is set, only that client should handle it.
     """
-    channel_incoming = f"game:{stake}:incoming"  
+    ch = f"game:{stake}:events"
     payload = {
         "event": event,
         "target_client_id": target_client_id  # None means broadcast
     }
-    r.publish(channel_incoming, json.dumps(payload))
+    r.publish(ch, json.dumps(payload))
 
 def process_message(msg):
     """Process incoming Redis messages."""

@@ -26,12 +26,12 @@ def publish_event(stake, event, target_client_id=None):
     Publish an event to Redis.
     If target_client_id is set, only that client should handle it.
     """
-    channel_incoming = f"game:{stake}:events"
+    ch = f"game:{stake}:events"
     payload = {
         "event": event,
         "target_client_id": target_client_id  # None means broadcast
     }
-    r.publish(channel_incoming, json.dumps(payload))
+    r.publish(ch, json.dumps(payload))
 
 
 # --- Redis state helpers ---
@@ -261,8 +261,8 @@ class GameManager:
             payload["target_client_id"] = target_client_id
         if room_name:
             payload["room_name"] = room_name
-        channel_incoming = f"game:{self.stake}:events"
-        r.publish(channel_incoming, json.dumps(payload))
+        ch = f"game:{self.stake}:events"
+        r.publish(ch, json.dumps(payload))
     
     # ---- player management ----
     def add_player(self, payload):
