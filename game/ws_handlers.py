@@ -325,7 +325,14 @@ class GameManager:
             self._publish({"type":"error","message":"User account is inactive."}, target_client_id=self.client_id)
             return
 
-        total_cost = Decimal(self.stake) * len(card_ids)
+        try:
+            stake_decimal = Decimal(int(self.stake))
+        except:
+            self._publish({"type":"error","message":"Invalid stake."}, target_client_id=self.client_id)
+            return
+
+        total_cost = stake_decimal * len(card_ids)
+
         if (user.wallet + user.bonus) < total_cost:
             self._publish({"type":"error","message":"Insufficient balance."}, target_client_id=self.client_id)
             return
