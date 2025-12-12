@@ -4,6 +4,7 @@ import threading
 import time
 import random
 from decimal import Decimal, InvalidOperation
+import uuid
 import redis
 
 from django.utils import timezone
@@ -24,15 +25,46 @@ stake = 10
 def publish_event(stake, event, target_client_id=None):
     """
     Publish an event to Redis.
-    If target_client_id is set, only that client should handle it.
+    Only ONE worker is allowed to broadcast this event.
     """
     ch = f"game:{stake}:events"
+    
+    # Unique lock key for this stake & event type
+    event_type = event.get("type", "unknown")
+    lock_key = f"broadcast_lock:{stake}:{event_type}"
+    
+    # Unique token for safe lock release
+    lock_token = str(uuid.uuid4())
+
+    # Try to acquire lock (NX = only if not exists)
+    got_lock = r.set(lock_key, lock_token, nx=True, ex=1)  
+    # ex=1 ensures lock auto-expires after 1 second
+
+    if not got_lock:
+        # another worker already broadcasting this event
+        return  
+
+    # Prepare payload
     payload = {
         "event": event,
-        "target_client_id": target_client_id  # None means broadcast
+        "target_client_id": target_client_id
     }
+
+    # Publish to Redis channel
     r.publish(ch, json.dumps(payload))
 
+    # Safely release lock ONLY if we still own it
+    try:
+        release_script = """
+        if redis.call("GET", KEYS[1]) == ARGV[1] then
+            return redis.call("DEL", KEYS[1])
+        else
+            return 0
+        end
+        """
+        r.eval(release_script, 1, lock_key, lock_token)
+    except Exception:
+        pass
 
 # --- Redis state helpers ---
 class RedisState:
