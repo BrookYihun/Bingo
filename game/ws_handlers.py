@@ -1246,6 +1246,8 @@ class GameManager:
                 self.redis_state.set_game_state("called_numbers", called, game.id)
                 self.redis_state.set_game_state("last_sent_number", num, game.id)
 
+                time.sleep(2)
+
                 # check random players
                 try:
                     self.check_bingo_for_random_players(called, game)
