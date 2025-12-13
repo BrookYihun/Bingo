@@ -329,10 +329,48 @@ def get_game_participants(request, game_id):
         "total_participants": len(results)
     })
 
+from django.db import connection
+from django.utils import timezone
+from datetime import timedelta
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+from django.db import connection
+from django.utils import timezone
+from datetime import timedelta
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+from django.db import connection
+from django.utils import timezone
+from datetime import timedelta
+from pytz import timezone as pytz_timezone
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+# Define EAT timezone (UTC+3, no DST)
+EAT = pytz_timezone('Etc/GMT-3')  # Note: GMT-3 = UTC+3 (pytz sign convention)
+
+from django.db import connection
+from django.utils import timezone
+from datetime import timedelta
+from pytz import timezone as pytz_timezone
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+# Define EAT timezone (UTC+3, no DST)
+EAT = pytz_timezone('Etc/GMT-3')  # Note: GMT-3 = UTC+3 (pytz sign convention)
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_global_leaderboard(request):
-    now = timezone.now()
+    now_utc = timezone.now()  # timezone-aware UTC
+    now_eat = now_utc.astimezone(EAT)
+
     current_user = request.user
 
     # --- Stake filter ---
@@ -341,58 +379,75 @@ def get_global_leaderboard(request):
         return Response({"error": "Invalid stake."}, status=400)
     selected_stake = stake_param
 
-    def build_leaderboard(start_date, end_date, label):
-        """Reusable helper to build leaderboard for a given period."""
-        annotated_users = (
-            User.objects
-            .annotate(
-                total_games=Sum(
-                    'game_participation__times_played',
-                    filter=Q(game_participation__created_at__gte=start_date)
-                           & Q(game_participation__created_at__lte=end_date)
-                           & Q(game_participation__game__stake=selected_stake),
-                )
-            )
-            .filter(total_games__gt=0)
-            .order_by('-total_games', 'id')
-        )
+    def build_leaderboard_sql(start_eat, end_eat, label):
+        """
+        start_eat, end_eat: timezone-aware datetimes in EAT (+03:00)
+        """
+        # Format as 'YYYY-MM-DD HH:MM:SS.ssssss+03:00' for TIMESTAMP literals
+        start_str = start_eat.isoformat()  # e.g., '2025-12-13T00:00:00+03:00'
+        end_str = end_eat.isoformat()
 
-        # Build rank map
-        all_users_with_rank = list(annotated_users.values('id', 'total_games'))
+        query = """
+        WITH ranked_users AS (
+            SELECT
+                u.id,
+                u.name,
+                u.phone_number,
+                COUNT(*) AS total_games_played   -- 🔁 Count participations
+            FROM custom_auth_abstractuser u
+            INNER JOIN game_usergameparticipation ugp
+                ON u.id = ugp.user_id
+                AND ugp.created_at BETWEEN 
+                TIMESTAMPTZ %s 
+                AND TIMESTAMPTZ %s
+                AND ugp.game_id IN (
+                    SELECT id FROM game_game WHERE stake = %s
+                )
+            GROUP BY u.id, u.name, u.phone_number
+        )
+        SELECT
+            id,
+            name,
+            phone_number,
+            total_games_played,
+            ROW_NUMBER() OVER (ORDER BY total_games_played DESC, id ASC) AS rank
+        FROM ranked_users
+        ORDER BY total_games_played DESC, id ASC;
+        """
+
+        with connection.cursor() as cursor:
+            cursor.execute(query, [start_str, end_str, selected_stake])
+            columns = [col[0] for col in cursor.description]
+            rows = cursor.fetchall()
+
+        all_users_with_rank = [dict(zip(columns, row)) for row in rows]
+
         user_rank_map = {
-            item['id']: {'rank': index + 1, 'total_games_played': item['total_games']}
-            for index, item in enumerate(all_users_with_rank)
+            item['id']: {
+                'rank': item['rank'],
+                'total_games_played': item['total_games_played']
+            }
+            for item in all_users_with_rank
         }
 
-        # Current user's data
         your_data = user_rank_map.get(current_user.id)
-        if your_data:
-            your_rank_info = {
-                "rank": your_data['rank'],
-                "user_id": current_user.id,
-                "name": current_user.name,
-                "phone_number": current_user.phone_number,
-                "total_games_played": your_data['total_games_played']
-            }
-        else:
-            your_rank_info = {
-                "rank": None,
-                "user_id": current_user.id,
-                "name": current_user.name,
-                "phone_number": current_user.phone_number,
-                "total_games_played": 0
-            }
+        your_rank_info = {
+            "rank": your_data['rank'] if your_data else None,
+            "user_id": current_user.id,
+            "name": current_user.name,
+            "phone_number": current_user.phone_number,
+            "total_games_played": your_data['total_games_played'] if your_data else 0,
+        }
 
-        # Top 10 players
         leaderboard = [
             {
-                "rank": user_rank_map[user.id]['rank'],
-                "user_id": user.id,
-                "name": user.name,
-                "phone_number": user.phone_number,
-                "total_games_played": user.total_games,
+                "rank": item['rank'],
+                "user_id": item['id'],
+                "name": item['name'],
+                "phone_number": item['phone_number'],
+                "total_games_played": item['total_games_played'],
             }
-            for user in annotated_users[:10]
+            for item in all_users_with_rank[:10]
         ]
 
         return {
@@ -400,21 +455,21 @@ def get_global_leaderboard(request):
             "leaderboard": leaderboard,
             "your_rank": your_rank_info,
             "total_users_ranked": len(user_rank_map),
-            "from_date": start_date.date().isoformat(),
-            "to_date": end_date.date().isoformat(),
+            "from_date": start_eat.date().isoformat(),
+            "to_date": end_eat.date().isoformat(),
         }
 
-    # --- Daily leaderboard ---
-    start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    daily_data = build_leaderboard(start_of_day, now, "daily")
+    # --- Daily: Today in EAT (00:00 → current time in EAT) ---
+    start_of_day_eat = now_eat.replace(hour=0, minute=0, second=0, microsecond=0)
+    daily_data = build_leaderboard_sql(start_of_day_eat, now_eat, "daily")
 
-    # --- Weekly leaderboard (Sunday 00:00 → Saturday 23:59:59) ---
-    # Python weekday: Monday=0 ... Saturday=5, Sunday=6
-    days_since_sunday = (now.weekday() - 6) % 7
-    start_of_week = now - timedelta(days=days_since_sunday)
-    start_of_week = start_of_week.replace(hour=0, minute=0, second=0, microsecond=0)
-    
-    weekly_data = build_leaderboard(start_of_week, now, "weekly")
+    # --- Weekly: Sunday 00:00 EAT → now (EAT) ---
+    # In EAT, get days since last Sunday
+    # weekday(): Mon=0 ... Sun=6 → so days since Sunday = (now.weekday() + 1) % 7
+    days_since_sunday = (now_eat.weekday() + 1) % 7  # Sun=0, Mon=1, ..., Sat=6
+    start_of_week_eat = now_eat - timedelta(days=days_since_sunday)
+    start_of_week_eat = start_of_week_eat.replace(hour=0, minute=0, second=0, microsecond=0)
+    weekly_data = build_leaderboard_sql(start_of_week_eat, now_eat, "weekly")
 
     return Response({
         "daily_leaderboard": daily_data,
@@ -422,6 +477,7 @@ def get_global_leaderboard(request):
         "filtered_by": {"stake": selected_stake},
         "available_filters": {"stake": ["10", "20", "50", "100"]}
     })
+
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
