@@ -58,7 +58,7 @@ CSRF_TRUSTED_ORIGINS = [
     'http://127.0.0.1:3000',
     'online.vamosbingo.com',
     'https://online.vamosbingo.com',
-    'http://49.13.50.120',k
+    'http://49.13.50.120',
 ]
 
 
