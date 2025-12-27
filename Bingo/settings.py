@@ -40,7 +40,6 @@ CORS_ALLOWED_ORIGINS = [
     'http://localhost:4200',
     'https://ntbingo.com',
     'http://127.0.0.1:3000',
-    'online.vamosbingo.com',
     'https://online.vamosbingo.com',
     'http://49.13.50.120',
     # Add other origins as needed
@@ -56,7 +55,6 @@ CSRF_TRUSTED_ORIGINS = [
     'http://localhost:4200',
     'https://ntbingo.com',
     'http://127.0.0.1:3000',
-    'online.vamosbingo.com',
     'https://online.vamosbingo.com',
     'http://49.13.50.120',
 ]
