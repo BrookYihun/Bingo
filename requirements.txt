@@ -1,5 +1,5 @@
 Django~=4.2.3
-channels~=4.3.1
+channels~=4.2.2
 asgiref~=3.9.1
 requests~=2.32.5
 Booktype~=1.5
