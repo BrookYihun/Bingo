@@ -22,6 +22,7 @@ ALLOWED_HOSTS = [
     'dallolbingo.com',
     'online.vamosbingo.com',
     'https://online.vamosbingo.com',
+    'vamosbingo.com',
     '49.13.50.120',
     'www.dallolbingo.com',
     'https://www.dallolbingo.com',
@@ -40,6 +41,7 @@ CORS_ALLOWED_ORIGINS = [
     'http://localhost:4200',
     'https://ntbingo.com',
     'http://127.0.0.1:3000',
+    'https://vamosbingo.com',
     'https://online.vamosbingo.com',
     'http://49.13.50.120',
     # Add other origins as needed
@@ -55,6 +57,7 @@ CSRF_TRUSTED_ORIGINS = [
     'http://localhost:4200',
     'https://ntbingo.com',
     'http://127.0.0.1:3000',
+    'https://vamosbingo.com',
     'https://online.vamosbingo.com',
     'http://49.13.50.120',
 ]

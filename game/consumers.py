@@ -1231,61 +1231,70 @@ class GameConsumer(WebsocketConsumer):
 
             if winning_numbers:
 
-                acc = User.objects.get(id=user_id)
+                if game.played == "closed":
+                    return
+
+                # ---- CHECK ALL PLAYERS ----
+                winners = self.check_bingo_for_all_players(game, called_numbers_list)
 
                 # Get stake amount (assuming game.stake or similar field exists)
                 stake = game.stake
                 bones_amount = 0
 
-                if stake == 10 or stake == 20 or stake == 50:
+                if stake in [10, 20, 50] and game.numberofplayers >= 10:
+                    bones = len(called_numbers_list)
 
-                    if game.numberofplayers >= 10:
-                    
-                        # Determine number of bones
-                        bones = len(called_numbers_list) 
+                    if bones <= 5:
+                        multiplier = 10
+                    elif bones == 6:
+                        multiplier = 8
+                    elif bones == 7:
+                        multiplier = 6
+                    elif bones == 8:
+                        multiplier = 4
+                    elif bones == 9:
+                        multiplier = 3
+                    elif bones == 10:
+                        multiplier = 2
+                    elif bones == 11:
+                        multiplier = 1
+                    else:
+                        multiplier = 0
 
-                        # Determine multiplier based on bones
-                        if bones <= 5:
-                            multiplier = 10
-                        elif bones == 6:
-                            multiplier = 8
-                        elif bones == 7:
-                            multiplier = 6
-                        elif bones == 8:
-                            multiplier = 4
-                        elif bones == 9:
-                            multiplier = 3
-                        elif bones == 10:
-                            multiplier = 2
-                        elif bones == 11:
-                            multiplier = 1
-                        else:
-                            multiplier = 0
-                    
-                        bones_amount = stake * multiplier
-                    print("Bones Amount Won: ", bones_amount)
-                self.update_consecutive_losses_after_game(game_id, user_id)
-                # Bingo achieved
-                result.append({
-                    'card_name': card.id,
-                    'message': 'Bingo',
-                    'name': acc.name,
-                    'user_id': acc.id,
-                    'card': json.loads(card.numbers),
-                    'winning_numbers': winning_numbers,
-                    'called_numbers': called_numbers_list,
-                    'bones_won': bones_amount,
-                })
+                    bones_amount = stake * multiplier
 
-                # Close the game
+                # ---- SPLIT AMOUNT ----
+                total_win = game.winner_price + bones_amount
+                split_amount = total_win // len(winners)
+
+                result = []
+
+                for w in winners:
+                    if w['user_id'] == 0:
+                        continue  # Skip random player here
+
+                    user = User.objects.get(id=w['user_id'])
+                    user.wallet += split_amount
+                    user.save()
+
+                    result.append({
+                        'user_id': user.id,
+                        'name': user.name,
+                        'card_id': w['card_id'],
+                        'card': w['card'],
+                        'winning_numbers': w['winning_numbers'],
+                        'amount_won': split_amount,
+                        'message': 'Bingo',
+                    })
+
+                winner_ids = [w['user_id'] for w in winners]
+
+                # ---- CLOSE GAME ----
                 game.played = "closed"
-                game.winner = user_id
-                game.winner_card=card.id
+                game.winner = winner_ids
                 game.bonus = bones_amount
-                game.winner_name = acc.name
                 game.save()
 
-                # Notify all players in the room group about the result
                 async_to_sync(self.channel_layer.group_send)(
                     self.room_group_name,
                     {
@@ -1294,12 +1303,10 @@ class GameConsumer(WebsocketConsumer):
                         'game_id': game.id
                     }
                 )
-                bingo = self.get_game_state("bingo", game.id)
-                if bingo == False:
-                    acc.wallet += game.winner_price + bones_amount
-                    acc.save()
-                    self.set_game_state("bingo", True, game.id)
-                return  # Exit once Bingo is found for any card
+
+                self.set_game_state("bingo", True, game.id)
+                return
+
 
         # If no Bingo was found for any card
         result.append({
@@ -1313,6 +1320,35 @@ class GameConsumer(WebsocketConsumer):
             'data': result,
             'game_id': game.id
         }))
+    
+    def check_bingo_for_all_players(self, game, called_numbers):
+        from game.models import Card
+        from custom_auth.models import User
+
+        winners = []
+
+        for entry in game.playerCard:
+            user_id = int(entry['user'])
+            card_ids = entry['card']
+
+            cards = Card.objects.filter(id__in=card_ids)
+
+            for card in cards:
+                numbers = json.loads(card.numbers)
+                winning_numbers = self.has_bingo(numbers, called_numbers)
+
+                if winning_numbers:
+                    user = User.objects.get(id=user_id)
+                    winners.append({
+                        'user_id': user.id,
+                        'name': user.name,
+                        'card_id': card.id,
+                        'card': numbers,
+                        'winning_numbers': winning_numbers,
+                    })
+                    break  # one winning card per user is enough
+
+        return winners
 
     def has_bingo(self, card, called_numbers):
         winning_columns = 0
