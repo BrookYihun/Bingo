@@ -1033,7 +1033,7 @@ class GameConsumer(WebsocketConsumer):
         game = Game.objects.get(id=int(game_id))
         selected_players = game.playerCard
 
-        if game.winner is not None:
+        if game.winner:
             return
 
         if game.played == 'closed':
@@ -1194,7 +1194,7 @@ class GameConsumer(WebsocketConsumer):
 
         user_cards = list(flatten(player_cards))
 
-        if game.winner is not None:
+        if game.winner:
             return
 
         if game.played == 'closed':
