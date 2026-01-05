@@ -1283,7 +1283,7 @@ class GameConsumer(WebsocketConsumer):
                         'card_id': w['card_id'],
                         'card': w['card'],
                         'winning_numbers': w['winning_numbers'],
-                        'amount_won': split_amount,
+                        'amount_won': float(split_amount),
                         'message': 'Bingo',
                     })
 
