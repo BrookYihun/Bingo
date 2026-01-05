@@ -1033,7 +1033,7 @@ class GameConsumer(WebsocketConsumer):
         game = Game.objects.get(id=int(game_id))
         selected_players = game.playerCard
 
-        if game.winner != 0:
+        if game.winner is not None:
             return
 
         if game.played == 'closed':
@@ -1068,7 +1068,7 @@ class GameConsumer(WebsocketConsumer):
                         random_id = random.choice(random_ids)
                     
                         game.played = "closed"
-                        game.winner = random_id
+                        game.winner = [random_id]
                         game.winner_card = card.id
                         game.winner_name = random_name
                         game.save()
@@ -1194,7 +1194,7 @@ class GameConsumer(WebsocketConsumer):
 
         user_cards = list(flatten(player_cards))
 
-        if game.winner != 0:
+        if game.winner is not None:
             return
 
         if game.played == 'closed':
@@ -1415,7 +1415,7 @@ class GameConsumer(WebsocketConsumer):
         if not current_game_id:
             return
         last_game = Game.objects.get(id=current_game_id)
-        players = json.loads(last_game.playerCard)
+        players = last_game.playerCard
         updated_list = [item for item in players if int(item['user']) != user_id]
         last_game.playerCard = json.dumps(updated_list)
         last_game.numberofplayers = len(updated_list)
