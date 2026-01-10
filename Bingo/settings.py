@@ -158,37 +158,28 @@ TEMPLATES = [
 WSGI_APPLICATION = 'Bingo.wsgi.application'
 
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'agents_local',
-        'USER': 'postgres',
-        'PASSWORD': 'localdev123',
-        'HOST': 'localhost',  # Typically localhost for shared hosting
-        'PORT': '5433',  # Leave empty if default port 5432 is used           # Leave empty if default port 5432 is used
-    }
-}
 # DATABASES = {
 #     'default': {
-#         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': 'dallol_bingo_online',
-#         'USER': 'dallol',
-#         'PASSWORD': 'Byihun@123',
-#         'HOST': '49.13.50.120',
-#         'PORT': '5432',
-#         'CONN_MAX_AGE': 60,  # keep connection open for 60 seconds max
-#     }
-# }
-# DATABASES={
-#     'default':{
 #         'ENGINE': 'django.db.backends.postgresql',
 #         'NAME': 'agents_local',
 #         'USER': 'postgres',
 #         'PASSWORD': 'localdev123',
 #         'HOST': 'localhost',  # Typically localhost for shared hosting
-#         'PORT': '5433',
+#         'PORT': '5433',  # Leave empty if default port 5432 is used           # Leave empty if default port 5432 is used
 #     }
 # }
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'dallol_bingo_online',
+        'USER': 'dallol',
+        'PASSWORD': 'Byihun@123',
+        'HOST': 'localhost',
+        'PORT': '5432',
+        'CONN_MAX_AGE': 60,
+    }
+}
 
 
 # Password validation
