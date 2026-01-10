@@ -22,4 +22,5 @@ urlpatterns = [
     path('api/auth/', include('custom_auth.urls')),
     path('api/bingo/',include('game.urls')),
     path('api/groups/', include('group.urls')),
+    path('api/affiliate/', include('affiliate.urls')),
 ]

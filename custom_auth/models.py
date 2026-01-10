@@ -36,6 +36,7 @@ class AbstractUser(AbstractBaseUser,PermissionsMixin):
     
     is_staff = models.BooleanField(default=False)  # Added for admin access
     is_active = models.BooleanField(default=True)  # Added for active users
+    is_affiliate = models.BooleanField(default=False)
     
     USERNAME_FIELD = 'phone_number'  # Use phone number for authentication
     REQUIRED_FIELDS = ['name']
@@ -58,6 +59,7 @@ class User(AbstractUser):
     total_withdraw_amount_per_day = models.DecimalField(max_digits=38, decimal_places=2, default=0)
     reference = models.CharField(max_length=255, default="", blank=True)
     consecutive_losses=models.IntegerField(default=0)
+    affiliate_wallet = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
     def __str__(self):
         return self.name  # Or self.get_full_name() if you want full name
