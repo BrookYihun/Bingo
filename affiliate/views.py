@@ -1,4 +1,5 @@
 from rest_framework.views import APIView
+from django.db.models import Q, Sum
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -42,7 +43,19 @@ class AffiliateReferralsView(APIView):
         # Simple search filter
         search_query = request.query_params.get('search')
         if search_query:
-            referrals = referrals.filter(name__icontains=search_query)
+            referrals = referrals.filter(
+                Q(name__icontains=search_query) | 
+                Q(phone_number__icontains=search_query) |
+                Q(id__icontains=search_query)
+            )
+
+        # Date registration filter
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        if start_date:
+            referrals = referrals.filter(date_joined__gte=start_date)
+        if end_date:
+            referrals = referrals.filter(date_joined__lte=end_date)
 
         # Pagination
         paginator = StandardResultsSetPagination()
@@ -82,11 +95,10 @@ class AffiliateReferralsView(APIView):
         serializer = UserSerializer(page_referrals, many=True)
         serialized_data = serializer.data
 
-        # Attach deposit history to each user in the response
+        # Attach deposit stats to each user (but not usage history list)
         for user_data in serialized_data:
             # serializer.data['id'] is typically an integer, match with stored string id
             uid = str(user_data.get('id')) 
-            user_data['deposit_history'] = deposits_by_user.get(uid, [])
             user_data['total_deposited'] = total_deposits_by_user.get(uid, 0.0)
 
         # Return paginated response
@@ -116,6 +128,16 @@ class AffiliateTransactionsView(APIView):
 
         # 1. Get list of users (id) referred by the affiliate
         referrals = User.objects.filter(reference=telegram_id)
+        
+        # Filter users first if searching by user details
+        search_user = request.query_params.get('search') # name or phone or id
+        if search_user:
+             referrals = referrals.filter(
+                Q(name__icontains=search_user) | 
+                Q(phone_number__icontains=search_user) |
+                Q(id__icontains=search_user)
+             )
+
         referral_ids = [str(u.id) for u in referrals]
 
         # 2. List of payment request that are successful, deposit, user id in (1) + sort by date desc
@@ -132,9 +154,23 @@ class AffiliateTransactionsView(APIView):
             transactions = transactions.filter(created_at__gte=start_date)
         if end_date:
             transactions = transactions.filter(created_at__lte=end_date)
+            
+        # Filter by specific user
+        target_user_id = request.query_params.get('user_id')
+        if target_user_id:
+             transactions = transactions.filter(user_id=target_user_id)
 
         paginator = StandardResultsSetPagination()
         result_page = paginator.paginate_queryset(transactions, request)
+
+        # Optimize user name lookup: Extract unique user IDs from the current page
+        page_user_ids = set([t.user_id for t in result_page if t.user_id])
+        
+        # Fetch names for these users in a single query
+        users_map = {
+            str(u.id): u.name 
+            for u in User.objects.filter(id__in=page_user_ids)
+        }
 
         # Serialize transactions manually (or use a serializer if available)
         data = []
@@ -144,6 +180,7 @@ class AffiliateTransactionsView(APIView):
                 "amount": t.amount,
                 "created_at": t.created_at,
                 "user_id": t.user_id,
+                "user_name": users_map.get(str(t.user_id), "Unknown User"),
                 "payment_type": t.payment_type,
                 "payment_status": t.payment_status
             })
@@ -263,3 +300,45 @@ class AffiliateWithdrawHistoryView(APIView):
             })
 
         return paginator.get_paginated_response(data)
+
+
+class AffiliateStatsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        if not getattr(user, 'is_affiliate', False):
+             return Response({"error": "User is not an affiliate."}, status=status.HTTP_403_FORBIDDEN)
+        
+        try:
+             affiliate_user = user.user
+        except User.DoesNotExist:
+             # Fallback if the user object structure is simple
+             affiliate_user = user
+
+        # 1. Total Balance
+        # Ensure we have the latest balance from DB
+        affiliate_user.refresh_from_db()
+        total_balance = affiliate_user.affiliate_wallet
+
+        # 2. Referrals Count
+        telegram_id = user.telegram_id
+        if telegram_id:
+            referrals_count = User.objects.filter(reference=telegram_id).count()
+        else:
+            referrals_count = 0
+
+        # 3. Total Earned = Balance + Accepted Withdrawals
+        # status=1 assumed to be 'Accepted' based on previous context
+        total_withdrawn = AffiliateWithdrawRequest.objects.filter(
+            user=affiliate_user,
+            status=1 
+        ).aggregate(Sum('amount'))['amount__sum'] or 0.0
+        
+        total_earned = float(total_balance) + float(total_withdrawn)
+
+        return Response({
+            "total_balance": total_balance,
+            "referrals_count": referrals_count,
+            "total_earned": total_earned
+        }, status=status.HTTP_200_OK)
