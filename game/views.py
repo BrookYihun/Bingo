@@ -267,7 +267,11 @@ def get_user_game_history(request):
     # Apply filter
     filtered_participations = []
     for part in participations:
-        is_winner = (part.game.winner == request.user.id)
+        winner_val = part.game.winner
+        if isinstance(winner_val, list):
+            is_winner = request.user.id in winner_val
+        else:
+            is_winner = (winner_val == request.user.id)
         if filter_type == 'wins' and not is_winner:
             continue
         if filter_type == 'losses' and is_winner:
@@ -282,7 +286,11 @@ def get_user_game_history(request):
     history = []
     for part in paginated_participations:
         game = part.game
-        is_winner = (game.winner == request.user.id)
+        winner_val = game.winner
+        if isinstance(winner_val, list):
+            is_winner = request.user.id in winner_val
+        else:
+            is_winner = (winner_val == request.user.id)
         history.append({
             "game_id": game.id,
             "stake": game.stake,
@@ -291,6 +299,7 @@ def get_user_game_history(request):
             "winner_price": float(game.winner_price) if game.winner_price else 0,
             "status": game.played,
             "is_winner": is_winner,
+            "numbers": json.loads(game.called_numbers) if isinstance(game.called_numbers, str) else game.called_numbers,
         })
 
     return paginator.get_paginated_response({
@@ -319,7 +328,7 @@ def get_game_participants(request, game_id):
             "name": part.user.name,
             "phone_number": part.user.phone_number,
             "played_at": part.created_at.isoformat(),
-            "is_winner": part.game.winner == part.user.id,
+            "is_winner": part.user.id in part.game.winner if isinstance(part.game.winner, list) else part.game.winner == part.user.id,
         })
 
     return Response({
@@ -436,8 +445,13 @@ def get_recent_games(request):
             try:
                 winner_name = game.winner_name
                 if not winner_name:
-                    winner_user = User.objects.get(id=game.winner)
-                    winner_name = winner_user.name
+                    winner_id_val = game.winner
+                    if isinstance(winner_id_val, list):
+                        winner_id_val = winner_id_val[0] if winner_id_val else None
+                    
+                    if winner_id_val:
+                        winner_user = User.objects.get(id=winner_id_val)
+                        winner_name = winner_user.name
             except User.DoesNotExist:
                 winner_name = "Unknown"
         recent.append({
@@ -447,6 +461,7 @@ def get_recent_games(request):
             "Prize": float(game.winner_price),
             "created_at": game.created_at.isoformat(),
             "total_players": game.numberofplayers,
+            "numbers": json.loads(game.called_numbers) if isinstance(game.called_numbers, str) else game.called_numbers,
         })
     return Response({"Recent_games": recent})
 
