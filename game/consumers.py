@@ -1358,15 +1358,25 @@ class GameConsumer(WebsocketConsumer):
                 winning_numbers = self.has_bingo(numbers, called_numbers)
 
                 if winning_numbers:
-                    user = User.objects.get(id=user_id)
-                    winners.append({
-                        'user_id': user.id,
-                        'name': user.name,
-                        'card_id': card.id,
-                        'card': numbers,
-                        'winning_numbers': winning_numbers,
-                    })
-                    break  # one winning card per user is enough
+                    if user_id == 0:
+                        winners.append({
+                            'user_id': 0,
+                            'name': 'Random Player',
+                            'card_id': card.id,
+                            'card': numbers,
+                            'winning_numbers': winning_numbers,
+                        })
+                        break  # one winning card per user is enough
+                    else:
+                        user = User.objects.get(id=user_id)
+                        winners.append({
+                            'user_id': user.id,
+                            'name': user.name,
+                            'card_id': card.id,
+                            'card': numbers,
+                            'winning_numbers': winning_numbers,
+                        })
+                        break  # one winning card per user is enough
 
         return winners
 
