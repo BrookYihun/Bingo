@@ -1082,27 +1082,10 @@ class GameConsumer(WebsocketConsumer):
                         # Check all real players for bingo
                         winners = self.check_bingo_for_all_players(game, called_numbers_list)
 
-                        # Include the user who called the function as winner
-                        if w['user_id'] != 0:
-                            winners.append({
-                                'user_id': w['user_id'],
-                                'card_id': w['card_id'],
-                                'card': w['card'],
-                                'winning_numbers': winning_numbers
-                            })
-                        
-                        else:
-                            random_ids = [217, 72, 173, 1, 170]
-                            random_id = random.choice(random_ids)
-                            winners.append({
-                                'user_id': random_id,
-                                'card_id': card.id,
-                                'card': numbers,
-                                'winning_numbers': winning_numbers
-                            })
                         # Split prize among real users
                         total_win = game.winner_price + bones_amount
                         split_amount = total_win // max(len(winners), 1)
+                        random_name = random.choice(random_player.names)
 
                         result = []
                         winner_ids = []
@@ -1110,23 +1093,38 @@ class GameConsumer(WebsocketConsumer):
                         for w in winners:
                             if w['user_id'] == 0:
                                 random_player.wallet += split_amount
-                                continue
-                            winner_user = User.objects.get(id=w['user_id'])
-                            winner_user.wallet += split_amount
-                            winner_user.save()
-                            winner_ids.append(w['user_id'])
-                            result.append({
-                                'user_id': winner_user.id,
-                                'name': winner_user.name,
-                                'card_id': w['card_id'],
-                                'card': w['card'],
-                                'winning_numbers': w['winning_numbers'],
-                                'amount_won': float(split_amount),
-                                'message': 'Bingo'
-                            })
+                                random_ids = [217, 72, 173, 1, 170]
+                                random_id = random.choice(random_ids)
+
+                                winner_ids.append(random_id)
+                                
+                                random_player.save()
+                                result.append({
+                                    'user_id': random_id,
+                                    'name': random_name,
+                                    'card_id': w['card_id'],
+                                    'card': w['card'],
+                                    'winning_numbers': w['winning_numbers'],
+                                    'amount_won': float(split_amount),
+                                    'message': 'Bingo'
+                                })
+                            else:
+                                winner_user = User.objects.get(id=w['user_id'])
+                                winner_user.wallet += split_amount
+                                winner_user.save()
+                                winner_ids.append(w['user_id'])                                  
+                                result.append({
+                                    'user_id': winner_user.id,
+                                    'name': winner_user.name,
+                                    'card_id': w['card_id'],
+                                    'card': w['card'],
+                                    'winning_numbers': w['winning_numbers'],
+                                    'amount_won': float(split_amount),
+                                    'message': 'Bingo'
+                                })
 
                         # Close game and save the actual caller's info
-                        random_name = random.choice(random_player.names)
+                        
                         game.played = "closed"
                         game.winner = winner_ids
                         game.winner_name = random_name
