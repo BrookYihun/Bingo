@@ -29,6 +29,7 @@ ALLOWED_HOSTS = [
     '127.0.0.1',
     'localhost',
     '172.20.10.2',
+
 ]
 
 CORS_ALLOWED_ORIGINS = [
@@ -91,7 +92,8 @@ INSTALLED_APPS = [
     'corsheaders',
     'channels',
     'game',
-    'group'
+    'group',
+    'affiliate'
 ]
 
 ASGI_APPLICATION = 'Bingo.asgi.application'
@@ -125,8 +127,7 @@ sentry_sdk.init(
     # Add data like request headers and IP for users,
     # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
     send_default_pii=True,
-    # Enable sending logs to Sentry
-    enable_logs=True,
+
     # Set traces_sample_rate to 1.0 to capture 100%
     # of transactions for tracing.
     traces_sample_rate=1.0,
@@ -167,6 +168,7 @@ WSGI_APPLICATION = 'Bingo.wsgi.application'
 #         'PORT': '5433',  # Leave empty if default port 5432 is used           # Leave empty if default port 5432 is used
 #     }
 # }
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -175,19 +177,9 @@ DATABASES = {
         'PASSWORD': 'Byihun@123',
         'HOST': 'localhost',
         'PORT': '5432',
-        'CONN_MAX_AGE': 60,  # keep connection open for 60 seconds max
+        'CONN_MAX_AGE': 60,
     }
 }
-# DATABASES={
-#     'default':{
-#         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': 'agents_local',
-#         'USER': 'postgres',
-#         'PASSWORD': 'localdev123',
-#         'HOST': 'localhost',  # Typically localhost for shared hosting
-#         'PORT': '5433',
-#     }
-# }
 
 
 # Password validation
