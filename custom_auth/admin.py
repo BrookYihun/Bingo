@@ -5,7 +5,10 @@ from custom_auth.models import AbstractUser, User
 # Register your models here.
 
 admin.site.register(AbstractUser)
-admin.site.register(User)
+
+admin.register(User)
+class UserAdmin(admin.ModelAdmin):
+    pass
 
 
 

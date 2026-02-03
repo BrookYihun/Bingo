@@ -172,9 +172,9 @@ WSGI_APPLICATION = 'Bingo.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'dallol_bingo_online',
-        'USER': 'dallol',
-        'PASSWORD': 'Byihun@123',
+        'NAME': 'bingo',
+        'USER': 'abel',
+        'PASSWORD': 'password',
         'HOST': 'localhost',
         'PORT': '5432',
         'CONN_MAX_AGE': 60,

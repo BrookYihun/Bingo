@@ -193,6 +193,9 @@ class CustomAuthUser(models.Model):
     class Meta:
         managed = False
         db_table = 'custom_auth_user'
+    
+    def __str__(self):
+        return self.abstractuser_ptr
         
 class TransferLog(models.Model):
     from_user=models.ForeignKey(

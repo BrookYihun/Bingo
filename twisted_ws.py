@@ -252,9 +252,9 @@ class BingoWSProtocol(WebSocketServerProtocol):
 
 
 if __name__ == "__main__":
-    factory = WebSocketServerFactory(u"ws://0.0.0.0:9000")
+    factory = WebSocketServerFactory(u"ws://0.0.0.0:9010")
     factory.protocol = BingoWSProtocol
-    endpoint = endpoints.TCP4ServerEndpoint(reactor, 9000)
+    endpoint = endpoints.TCP4ServerEndpoint(reactor, 9010)
     endpoint.listen(factory)
-    print("Twisted WebSocket server listening on 0.0.0.0:9000")
+    print("Twisted WebSocket server listening on 0.0.0.0:9010")
     reactor.run()
