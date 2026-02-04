@@ -2,6 +2,13 @@ import os
 from pathlib import Path
 from datetime import timedelta
 
+def _env_list(key: str, default: str = "") -> list:
+    """Parse comma-separated env var into list; empty string means use default list."""
+    val = os.environ.get(key, default).strip()
+    if not val:
+        return []
+    return [x.strip() for x in val.split(",") if x.strip()]
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -9,59 +16,22 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-c=q1&)#p8i1@e_@i$tlr#^0uwt438fw&^z=x5qmju%0lc(0%wh'
+SECRET_KEY = os.environ.get(
+    "DJANGO_SECRET_KEY",
+    "django-insecure-c=q1&)#p8i1@e_@i$tlr#^0uwt438fw&^z=x5qmju%0lc(0%wh",
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get("DEBUG", "true").lower() in ("true", "1", "yes")
 
-ALLOWED_HOSTS = [
-    '5.75.175.113',
-    '91.98.86.196',
-    'ntbingo.com',
-    'https://ntbingo.com',
-    'dallolbingo.com',
-    'online.vamosbingo.com',
-    'https://online.vamosbingo.com',
-    'vamosbingo.com',
-    '49.13.50.120',
-    'www.dallolbingo.com',
-    'https://www.dallolbingo.com',
-    '127.0.0.1',
-    'localhost',
-    '172.20.10.2',
+# Comma-separated for easy profile switching (e.g. ALLOWED_HOSTS=127.0.0.1,localhost)
+_ALLOWED_DEFAULT = "127.0.0.1,localhost"
+ALLOWED_HOSTS = _env_list("ALLOWED_HOSTS", _ALLOWED_DEFAULT) or _ALLOWED_DEFAULT.split(",")
 
-]
+_CORS_DEFAULT = "http://localhost:3000,http://localhost:4200,http://127.0.0.1:3000"
+CORS_ALLOWED_ORIGINS = _env_list("CORS_ALLOWED_ORIGINS", _CORS_DEFAULT) or _CORS_DEFAULT.split(",")
 
-CORS_ALLOWED_ORIGINS = [
-    'http://5.75.175.113',
-    'https://91.98.86.196',
-    'https://dallolbingo.com',
-    'http://www.dallolbingo.com',
-    'https://www.dallolbingo.com',
-    'http://localhost:3000',
-    'http://localhost:4200',
-    'https://ntbingo.com',
-    'http://127.0.0.1:3000',
-    'https://vamosbingo.com',
-    'https://online.vamosbingo.com',
-    'http://49.13.50.120',
-    # Add other origins as needed
-]
-
-CSRF_TRUSTED_ORIGINS = [
-    'http://5.75.175.113',
-    'https://91.98.86.196',
-    'https://dallolbingo.com',
-    'http://www.dallolbingo.com',
-    'https://www.dallolbingo.com',
-    'http://localhost:3000',
-    'http://localhost:4200',
-    'https://ntbingo.com',
-    'http://127.0.0.1:3000',
-    'https://vamosbingo.com',
-    'https://online.vamosbingo.com',
-    'http://49.13.50.120',
-]
+CSRF_TRUSTED_ORIGINS = _env_list("CSRF_TRUSTED_ORIGINS", _CORS_DEFAULT) or _CORS_DEFAULT.split(",")
 
 
 CORS_ALLOW_CREDENTIALS = True
@@ -120,24 +90,16 @@ REST_FRAMEWORK = {
 
 ROOT_URLCONF = 'Bingo.urls'
 
-import sentry_sdk
-
-sentry_sdk.init(
-    dsn="https://3b9d9cc849194c0c490a99a63e77bb5d@o4510549827780608.ingest.de.sentry.io/4510549830074448",
-    # Add data like request headers and IP for users,
-    # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
-    send_default_pii=True,
-
-    # Set traces_sample_rate to 1.0 to capture 100%
-    # of transactions for tracing.
-    traces_sample_rate=1.0,
-    # Set profile_session_sample_rate to 1.0 to profile 100%
-    # of profile sessions.
-    profile_session_sample_rate=1.0,
-    # Set profile_lifecycle to "trace" to automatically
-    # run the profiler on when there is an active transaction
-    profile_lifecycle="trace",
-)
+SENTRY_DSN = os.environ.get("SENTRY_DSN", "")
+if SENTRY_DSN:
+    import sentry_sdk
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        send_default_pii=True,
+        traces_sample_rate=float(os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "1.0")),
+        profile_session_sample_rate=float(os.environ.get("SENTRY_PROFILE_SAMPLE_RATE", "1.0")),
+        profile_lifecycle="trace",
+    )
 
 TEMPLATES = [
     {
@@ -158,26 +120,16 @@ TEMPLATES = [
 WSGI_APPLICATION = 'Bingo.wsgi.application'
 
 
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': 'agents_local',
-#         'USER': 'postgres',
-#         'PASSWORD': 'localdev123',
-#         'HOST': 'localhost',  # Typically localhost for shared hosting
-#         'PORT': '5433',  # Leave empty if default port 5432 is used           # Leave empty if default port 5432 is used
-#     }
-# }
-
+# Database: set env vars per profile (e.g. DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT)
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'dallol_bingo_online',
-        'USER': 'dallol',
-        'PASSWORD': 'Byihun@123',
-        'HOST': 'localhost',
-        'PORT': '5432',
-        'CONN_MAX_AGE': 60,
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.environ.get("DB_NAME", "dallol_bingo_online"),
+        "USER": os.environ.get("DB_USER", "dallol"),
+        "PASSWORD": os.environ.get("DB_PASSWORD", ""),
+        "HOST": os.environ.get("DB_HOST", "localhost"),
+        "PORT": os.environ.get("DB_PORT", "5432"),
+        "CONN_MAX_AGE": int(os.environ.get("DB_CONN_MAX_AGE", "60")),
     }
 }
 
@@ -229,23 +181,25 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'custom_auth.AbstractUser'
 
+REDIS_HOST = os.environ.get("REDIS_HOST", "127.0.0.1")
+REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [("127.0.0.1", 6379)],
+            "hosts": [(REDIS_HOST, REDIS_PORT)],
         },
     },
 }
 
-OTP_PROVIDER_API_URL = "https://api.afromessage.com/api"  # Replace with your provider's API URL
-OTP_PROVIDER_API_KEY = "eyJhbGciOiJIUzI1NiJ9.eyJpZGVudGlmaWVyIjoiTUg4aGRvSnczUnhYSHd4OVFYUkJBWERqaFNrOVR1ZjAiLCJleHAiOjE4OTI4MTMyNDcsImlhdCI6MTczNTA0Njg0NywianRpIjoiZTgxMmM0ZDEtMjc1MS00NzkwLWFiOWQtM2I2MzlmZTI2YmI3In0.UA1JI7A7n9WJuDkBMANOryMIjbzppW_W1Bg9Pf12Uzc"  # Replace with your API key
-OTP_EXPIRY_TIME = 300  # OTP expiry time in seconds (e.g., 5 minutes)
-OTP_SENDER_NAME = "Dallol Games"
-OTP_MESSAGE_PREFIX = "Wellcome to Dallol Games"
-OTP_MESSAGE_POSTFIX = "" 
+OTP_PROVIDER_API_URL = os.environ.get("OTP_PROVIDER_API_URL", "https://api.afromessage.com/api")
+OTP_PROVIDER_API_KEY = os.environ.get("OTP_PROVIDER_API_KEY", "")
+OTP_EXPIRY_TIME = int(os.environ.get("OTP_EXPIRY_TIME", "300"))
+OTP_SENDER_NAME = os.environ.get("OTP_SENDER_NAME", "Dallol Games")
+OTP_MESSAGE_PREFIX = os.environ.get("OTP_MESSAGE_PREFIX", "Wellcome to Dallol Games")
+OTP_MESSAGE_POSTFIX = os.environ.get("OTP_MESSAGE_POSTFIX", "")
 
-TELEGRAM_BOT_TOKEN = "8253982856:AAFdCvsruTRmnYQA_ppfJ_pnIa2eHPcoupQ"
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 
 LOGGING = {
     'version': 1,

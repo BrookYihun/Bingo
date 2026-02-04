@@ -1,5 +1,8 @@
 # db_worker.py
-import os, django, json, redis
+import os
+import django
+import json
+import redis
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "Bingo.settings")
 django.setup()
@@ -7,7 +10,9 @@ django.setup()
 from game.models import Game
 from custom_auth.models import User
 
-r = redis.Redis(decode_responses=True)
+REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.environ.get("REDIS_PORT", 6379))
+r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
 def handle_db_event(event):
     from game.models import Game

@@ -1,0 +1,70 @@
+# DB and Redis on another server – set DB_* and REDIS_* in your env file.
+# Deploy: master → prod.env, develop → dev.env
+#   docker compose --env-file prod.env up -d   # production
+#   docker compose --env-file dev.env up -d    # development
+
+services:
+  app:
+    build: .
+    command: python manage.py runserver 0.0.0.0:8000
+    environment:
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-dev-secret-key}
+      DEBUG: ${DEBUG:-true}
+    ports:
+      - "${APP_PORT:-8000}:8000"
+
+  # Twisted WebSocket server – port set by WS_PORT in .env
+  # Start with: docker compose --profile full up
+  twisted_ws:
+    profiles: ["full"]
+    build: .
+    command: python twisted_ws.py
+    environment:
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-dev-secret-key}
+      DEBUG: ${DEBUG:-true}
+    ports:
+      - "${WS_PORT:-9000}:9000"
+
+  redis_worker:
+    profiles: ["full"]
+    build: .
+    command: python redis_worker.py
+    environment:
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-dev-secret-key}
+      DEBUG: ${DEBUG:-true}
+
+  dbworker:
+    profiles: ["full"]
+    build: .
+    command: python dbworker.py
+    environment:
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-dev-secret-key}
+      DEBUG: ${DEBUG:-true}
