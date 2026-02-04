@@ -1084,7 +1084,7 @@ class GameConsumer(WebsocketConsumer):
 
                         # Split prize among real users
                         total_win = game.winner_price + bones_amount
-                        split_amount = total_win / max(len(winners), 1)  # Use regular division for Decimal compatibility
+                        split_amount = total_win / max(len(winners), 1)
                         random_name = random.choice(random_player.names)
 
                         result = []
@@ -1281,12 +1281,11 @@ class GameConsumer(WebsocketConsumer):
 
                 # ---- SPLIT AMOUNT ----
                 total_win = game.winner_price + bones_amount
-                split_amount = total_win / len(winners)  # Use regular division for Decimal compatibility
+                split_amount = total_win / len(winners)
 
                 result = []
                 winner_ids = []
                 
-                # Get the actual caller's user object (the one who called bingo)
                 caller_user = User.objects.get(id=user_id)
 
                 for w in winners:
