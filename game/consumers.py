@@ -1084,7 +1084,7 @@ class GameConsumer(WebsocketConsumer):
 
                         # Split prize among real users
                         total_win = game.winner_price + bones_amount
-                        split_amount = total_win // max(len(winners), 1)
+                        split_amount = total_win / max(len(winners), 1)  # Use regular division for Decimal compatibility
                         random_name = random.choice(random_player.names)
 
                         result = []
@@ -1281,21 +1281,28 @@ class GameConsumer(WebsocketConsumer):
 
                 # ---- SPLIT AMOUNT ----
                 total_win = game.winner_price + bones_amount
-                split_amount = total_win // len(winners)
+                split_amount = total_win / len(winners)  # Use regular division for Decimal compatibility
 
                 result = []
+                winner_ids = []
+                
+                # Get the actual caller's user object (the one who called bingo)
+                caller_user = User.objects.get(id=user_id)
 
                 for w in winners:
                     if w['user_id'] == 0:
+                        winner_ids.append(0)
                         continue  # Skip random player here
 
-                    user = User.objects.get(id=w['user_id'])
-                    user.wallet += split_amount
-                    user.save()
+                    winner_user = User.objects.get(id=w['user_id'])
+                    winner_user.wallet += split_amount
+                    winner_user.save()
+                    
+                    winner_ids.append(winner_user.id)
 
                     result.append({
-                        'user_id': user.id,
-                        'name': user.name,
+                        'user_id': winner_user.id,
+                        'name': winner_user.name,
                         'card_id': w['card_id'],
                         'card': w['card'],
                         'winning_numbers': w['winning_numbers'],
@@ -1303,12 +1310,10 @@ class GameConsumer(WebsocketConsumer):
                         'message': 'Bingo',
                     })
 
-                winner_ids = [w['user_id'] for w in winners]
-
                 # ---- CLOSE GAME ----
                 game.played = "closed"
                 game.winner = winner_ids
-                game.winner_name = user.name
+                game.winner_name = caller_user.name  # Use the actual caller's name, not the last winner
                 game.winner_card = card.id
                 game.bonus = bones_amount
                 game.save()
